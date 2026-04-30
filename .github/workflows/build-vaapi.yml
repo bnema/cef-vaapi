@@ -1,6 +1,9 @@
-name: Build cef-vaapi binary
+name: Build and publish cef-vaapi-bin
 
 on:
+  schedule:
+    # Check daily for new Arch cef releases and build a binary if missing.
+    - cron: '0 8 * * *'
   workflow_dispatch:
     inputs:
       force_rebuild:
@@ -15,33 +18,42 @@ on:
       - .SRCINFO
       - '*.patch'
       - FindCEF.cmake
+      - scripts/update-from-arch-cef.sh
 
 permissions:
   contents: write
 
 jobs:
-  build-cef:
-    name: Build CEF with VAAPI on trusted self-hosted runner
+  build-and-publish:
+    name: Build cef-vaapi and publish cef-vaapi-bin
     # Never run public PR code on the self-hosted runner.
     if: github.event_name != 'pull_request' && github.event_name != 'pull_request_target'
     runs-on: [self-hosted, cef-builder, linux, x64]
+    timeout-minutes: 720
 
     steps:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
+      - name: Sync packaging from Arch cef
+        run: |
+          bash scripts/update-from-arch-cef.sh
+          git diff -- PKGBUILD .SRCINFO '*.patch' FindCEF.cmake || true
+
       - name: Extract package metadata
         id: pkg
         run: |
           source PKGBUILD
+          pkgfile="cef-vaapi-${pkgver}-${pkgrel}-x86_64.pkg.tar.zst"
+          tag="cef-vaapi-v${pkgver}-${pkgrel}"
           echo "pkgver=${pkgver}" >> "$GITHUB_OUTPUT"
           echo "pkgrel=${pkgrel}" >> "$GITHUB_OUTPUT"
-          echo "pkgfile=cef-vaapi-${pkgver}-${pkgrel}-x86_64.pkg.tar.zst" >> "$GITHUB_OUTPUT"
-          echo "tag=cef-vaapi-v${pkgver}-${pkgrel}" >> "$GITHUB_OUTPUT"
-          echo "Building cef-vaapi ${pkgver}-${pkgrel}"
+          echo "pkgfile=${pkgfile}" >> "$GITHUB_OUTPUT"
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+          echo "Building ${pkgfile} from Arch cef ${pkgver}-${pkgrel}"
 
-      - name: Check if binary release already exists
+      - name: Check whether binary release already exists
         id: release_check
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -52,7 +64,7 @@ jobs:
               echo "Release exists, but force_rebuild=true"
             else
               echo "exists=true" >> "$GITHUB_OUTPUT"
-              echo "Release already exists; skipping build"
+              echo "Release already exists; nothing to build"
             fi
           else
             echo "exists=false" >> "$GITHUB_OUTPUT"
@@ -86,6 +98,10 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          if gh release view "${{ steps.pkg.outputs.tag }}" >/dev/null 2>&1; then
+            gh release delete "${{ steps.pkg.outputs.tag }}" --yes --cleanup-tag
+          fi
+
           gh release create "${{ steps.pkg.outputs.tag }}" \
             --repo bnema/cef-vaapi \
             --title "cef-vaapi ${{ steps.pkg.outputs.pkgver }}-${{ steps.pkg.outputs.pkgrel }}" \
@@ -101,7 +117,7 @@ jobs:
             "${{ steps.build.outputs.package_path }}" \
             SHA256SUMS
 
-      - name: Generate cef-vaapi-bin PKGBUILD for AUR
+      - name: Generate cef-vaapi-bin PKGBUILD
         if: steps.release_check.outputs.exists == 'false'
         run: |
           mkdir -p pkgbuild/cef-vaapi-bin
@@ -144,19 +160,44 @@ jobs:
             bsdtar -xpf "\${srcdir}/cef-vaapi-\${pkgver}-\${pkgrel}-x86_64.pkg.tar.zst" -C "\${pkgdir}" usr
           }
           EOF
-          # Remove heredoc indentation before validating the generated PKGBUILD.
-          # Keep this regex whitespace-based so YAML indentation changes do not break generation.
           sed -i -E 's/^[[:space:]]{10}//' pkgbuild/cef-vaapi-bin/PKGBUILD
           bash -n pkgbuild/cef-vaapi-bin/PKGBUILD
+          makepkg --printsrcinfo -p pkgbuild/cef-vaapi-bin/PKGBUILD > pkgbuild/cef-vaapi-bin/.SRCINFO
 
       - name: Publish cef-vaapi-bin to AUR
         if: steps.release_check.outputs.exists == 'false'
-        uses: KSXGitHub/github-actions-deploy-aur@v4.1.3
-        with:
-          pkgname: cef-vaapi-bin
-          pkgbuild: ./pkgbuild/cef-vaapi-bin/PKGBUILD
-          commit_username: ${{ secrets.AUR_USERNAME }}
-          commit_email: ${{ secrets.AUR_EMAIL }}
-          ssh_private_key: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
-          commit_message: "Update cef-vaapi-bin to ${{ steps.pkg.outputs.pkgver }}-${{ steps.pkg.outputs.pkgrel }}"
-          ssh_keyscan_types: rsa,ecdsa,ed25519
+        env:
+          AUR_USERNAME: ${{ secrets.AUR_USERNAME }}
+          AUR_EMAIL: ${{ secrets.AUR_EMAIL }}
+          AUR_SSH_PRIVATE_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          test -n "$AUR_USERNAME"
+          test -n "$AUR_EMAIL"
+          test -n "$AUR_SSH_PRIVATE_KEY"
+
+          install -d -m 700 "$HOME/.ssh"
+          printf '%s\n' "$AUR_SSH_PRIVATE_KEY" > "$HOME/.ssh/aur"
+          chmod 600 "$HOME/.ssh/aur"
+          ssh-keyscan -t rsa,ecdsa,ed25519 aur.archlinux.org >> "$HOME/.ssh/known_hosts"
+
+          export GIT_SSH_COMMAND="ssh -i $HOME/.ssh/aur -o IdentitiesOnly=yes"
+          git config --global user.name "$AUR_USERNAME"
+          git config --global user.email "$AUR_EMAIL"
+
+          rm -rf /tmp/cef-vaapi-bin-aur
+          if ! git clone ssh://aur@aur.archlinux.org/cef-vaapi-bin.git /tmp/cef-vaapi-bin-aur; then
+            mkdir -p /tmp/cef-vaapi-bin-aur
+            git -C /tmp/cef-vaapi-bin-aur init
+            git -C /tmp/cef-vaapi-bin-aur remote add origin ssh://aur@aur.archlinux.org/cef-vaapi-bin.git
+          fi
+          cp pkgbuild/cef-vaapi-bin/PKGBUILD pkgbuild/cef-vaapi-bin/.SRCINFO /tmp/cef-vaapi-bin-aur/
+
+          cd /tmp/cef-vaapi-bin-aur
+          git add PKGBUILD .SRCINFO
+          if git diff --cached --quiet; then
+            echo "AUR cef-vaapi-bin already up to date"
+          else
+            git commit -m "Update cef-vaapi-bin to ${{ steps.pkg.outputs.pkgver }}-${{ steps.pkg.outputs.pkgrel }}"
+            git push origin master
+          fi
