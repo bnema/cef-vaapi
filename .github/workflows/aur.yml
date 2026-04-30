@@ -32,8 +32,8 @@ jobs:
           grep -q 'link_pulseaudio=true' PKGBUILD
           grep -q 'use_vaapi=true' PKGBUILD
           grep -q 'cef::git+https://github.com/chromiumembedded/cef.git' PKGBUILD
-          ! grep -q '^\s*\[ffmpeg\]=ffmpeg' PKGBUILD
-          ! grep -q '^replaces=' PKGBUILD
+          ! grep -q '^[[:space:]]*\[ffmpeg\]=ffmpeg' PKGBUILD
+          ! grep -q '^[[:space:]]*replaces=' PKGBUILD
           echo "All required CEF flags validated"
 
       - name: Publish cef-vaapi to AUR

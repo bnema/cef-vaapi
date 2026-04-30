@@ -35,7 +35,7 @@ jobs:
 
       - name: Validate no system ffmpeg
         run: |
-          if grep -q '^\[ffmpeg\]=ffmpeg' PKGBUILD; then
+          if grep -q '^[[:space:]]*\[ffmpeg\]=ffmpeg' PKGBUILD; then
             echo "FAIL: _system_libs[ffmpeg] is enabled!"
             exit 1
           fi
@@ -46,7 +46,7 @@ jobs:
           grep -q "pkgname=cef-vaapi" PKGBUILD && echo "OK: pkgname" || { echo "FAIL: wrong pkgname"; exit 1; }
           grep -q 'provides=("cef=' PKGBUILD && echo "OK: provides" || { echo "FAIL: provides missing"; exit 1; }
           grep -q "conflicts=('cef')" PKGBUILD && echo "OK: conflicts" || { echo "FAIL: conflicts missing"; exit 1; }
-          ! grep -q "replaces=" PKGBUILD && echo "OK: no replaces" || { echo "FAIL: replaces present"; exit 1; }
+          ! grep -q '^[[:space:]]*replaces=' PKGBUILD && echo "OK: no replaces" || { echo "FAIL: replaces present"; exit 1; }
           grep -q "'libva'" PKGBUILD && echo "OK: libva dep" || { echo "FAIL: libva missing from depends"; exit 1; }
 
       - name: Validate CEF source alias
@@ -61,7 +61,8 @@ jobs:
           if grep -q "pkgver = ${pkgver}" .SRCINFO && grep -q "pkgrel = ${pkgrel}" .SRCINFO; then
             echo "OK: .SRCINFO matches PKGBUILD version"
           else
-            echo "WARN: .SRCINFO version may be stale - regenerate with 'makepkg --printsrcinfo > .SRCINFO'"
+            echo "FAIL: .SRCINFO version is stale - regenerate with 'makepkg --printsrcinfo > .SRCINFO'"
+            exit 1
           fi
 
       - name: Check local patches exist

@@ -30,6 +30,9 @@ jobs:
     if: github.event_name != 'pull_request' && github.event_name != 'pull_request_target'
     runs-on: [self-hosted, cef-builder, linux, x64]
     timeout-minutes: 720
+    concurrency:
+      group: cef-vaapi-build-${{ github.ref }}
+      cancel-in-progress: true
 
     steps:
       - uses: actions/checkout@v6
@@ -84,6 +87,17 @@ jobs:
           ls -lh "${{ steps.pkg.outputs.pkgfile }}"
           echo "package_path=$(realpath "${{ steps.pkg.outputs.pkgfile }}")" >> "$GITHUB_OUTPUT"
 
+      - name: Verify built binary contains VAAPI symbols
+        if: steps.release_check.outputs.exists == 'false'
+        run: |
+          set -euo pipefail
+          tmpdir=$(mktemp -d)
+          trap 'rm -rf "$tmpdir"' EXIT
+
+          bsdtar -xOf "${{ steps.pkg.outputs.pkgfile }}" usr/lib/cef/libcef.so > "$tmpdir/libcef.so"
+          strings "$tmpdir/libcef.so" | grep -E 'vaCreateContext|VaapiVideoDecoder|libva\.so' | tee VAAPI-CHECK.txt
+          test -s VAAPI-CHECK.txt
+
       - name: Generate checksum
         if: steps.release_check.outputs.exists == 'false'
         id: checksum
@@ -92,6 +106,12 @@ jobs:
           echo "sha256=${sha256}" >> "$GITHUB_OUTPUT"
           printf '%s  %s\n' "$sha256" "${{ steps.pkg.outputs.pkgfile }}" > SHA256SUMS
           cat SHA256SUMS
+
+      - name: Prepare release provenance artifacts
+        if: steps.release_check.outputs.exists == 'false'
+        run: |
+          cp PKGBUILD "cef-vaapi-${{ steps.pkg.outputs.pkgver }}-${{ steps.pkg.outputs.pkgrel }}-PKGBUILD"
+          cp .SRCINFO "cef-vaapi-${{ steps.pkg.outputs.pkgver }}-${{ steps.pkg.outputs.pkgrel }}-SRCINFO"
 
       - name: Create GitHub Release
         if: steps.release_check.outputs.exists == 'false'
@@ -109,13 +129,18 @@ jobs:
 
             SHA256: \`${{ steps.checksum.outputs.sha256 }}\`
 
+            Release assets include the generated PKGBUILD, generated SRCINFO, and VAAPI symbol check output for provenance.
+
             Install manually:
             \`\`\`
             sudo pacman -U ${{ steps.pkg.outputs.pkgfile }}
             \`\`\`
             " \
             "${{ steps.build.outputs.package_path }}" \
-            SHA256SUMS
+            SHA256SUMS \
+            VAAPI-CHECK.txt \
+            "cef-vaapi-${{ steps.pkg.outputs.pkgver }}-${{ steps.pkg.outputs.pkgrel }}-PKGBUILD" \
+            "cef-vaapi-${{ steps.pkg.outputs.pkgver }}-${{ steps.pkg.outputs.pkgrel }}-SRCINFO"
 
       - name: Generate cef-vaapi-bin PKGBUILD
         if: steps.release_check.outputs.exists == 'false'
