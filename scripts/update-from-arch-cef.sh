@@ -60,7 +60,7 @@ find "$CACHE_DIR" -maxdepth 1 -type f -name '*.patch' -exec cp -f -t "$OUTPUT_DI
 cp -f "$CACHE_DIR/FindCEF.cmake" "$OUTPUT_DIR/"
 cp -f "$CACHE_DIR/REUSE.toml" "$OUTPUT_DIR/"
 # Preserve Arch's ISC packaging license alongside repo MIT
-cp -f "$CACHE_DIR/LICENSE" "$OUTPUT_DIR/LICENSE.CEF-BSD3"
+cp -f "$CACHE_DIR/LICENSE" "$OUTPUT_DIR/LICENSE.ARCH-ISC"
 if [[ -d "$CACHE_DIR/LICENSES" ]]; then
   rm -rf "$OUTPUT_DIR/LICENSES"
   cp -a "$CACHE_DIR/LICENSES" "$OUTPUT_DIR/LICENSES"
@@ -298,4 +298,4 @@ grep -q '_validate_cef_vaapi_invariants' "$PKG" || die "guardrails missing"
 grep -q 'pkgbase = cef-vaapi' "$SRC" || die ".SRCINFO pkgbase check failed"
 
 log "Update complete: $OUTPUT_DIR"
-log "Created/updated PKGBUILD, .SRCINFO, patches, FindCEF.cmake, LICENSE.CEF-BSD3, REUSE.toml, LICENSES/"
+log "Created/updated PKGBUILD, .SRCINFO, patches, FindCEF.cmake, LICENSE.ARCH-ISC, REUSE.toml, LICENSES/"

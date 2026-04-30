@@ -21,3 +21,7 @@ src/
 
 # Local/private infrastructure setup
 infra/
+
+# Local/private runner image and generated binary AUR package
+.github/actions-runner/
+aur/cef-vaapi-bin/

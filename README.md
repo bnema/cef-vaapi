@@ -19,7 +19,7 @@ If you use a CEF-based application (like [Dumber](https://github.com/bnema/dumbe
 
 ## Why you might NOT want this
 
-- **This is a source package.** Building CEF from source takes several hours and requires 25+ GB of RAM and over 100 GB of free disk space.
+- **This is a source package.** Building CEF from source takes several hours. The validated local build used about 22 GB of build directory space, plus source downloads and normal package-manager overhead.
 - If you don't need VAAPI video decode in CEF, stick with the official Arch `cef`.
 - If you need VAAPI in Chromium itself, use Arch's `chromium` or `ungoogled-chromium` packages instead.
 
@@ -32,7 +32,7 @@ Tested locally with [Dumber](https://github.com/bnema/dumber) on Arch Linux / AM
 - Dumber GPU process attributed non-zero Media/VCN usage
 - Proprietary codecs still present and functional
 
-Full details in the [design spec](https://github.com/bnema/cef-vaapi/blob/main/SPEC.md).
+This evidence came from a local Dumber validation run on AMD/Wayland before packaging.
 
 ## What's NOT included
 
@@ -78,5 +78,5 @@ A GitHub Actions workflow automates this periodically.
 ## License
 
 - Repository scripts, documentation, and workflow files: MIT — see `LICENSE`
-- Upstream CEF packaging metadata (Arch Linux): ISC — see `LICENSE.CEF-BSD3`
+- Upstream Arch packaging metadata copied from Arch Linux: ISC — see `LICENSE.ARCH-ISC`
 - CEF framework itself: BSD-3-Clause — declared in PKGBUILD `license=('BSD-3-Clause')`

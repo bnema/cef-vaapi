@@ -1,14 +1,11 @@
 name: AUR Publish
 
 on:
-  push:
-    branches:
-      - main
   workflow_dispatch:
 
 jobs:
   publish-aur:
-    name: Publish cef-vaapi to AUR
+    name: Publish cef-vaapi source package to AUR
     runs-on: ubuntu-latest
     concurrency:
       group: cef-vaapi-aur-publish
@@ -35,6 +32,8 @@ jobs:
           grep -q 'link_pulseaudio=true' PKGBUILD
           grep -q 'use_vaapi=true' PKGBUILD
           grep -q 'cef::git+https://github.com/chromiumembedded/cef.git' PKGBUILD
+          ! grep -q '^\s*\[ffmpeg\]=ffmpeg' PKGBUILD
+          ! grep -q '^replaces=' PKGBUILD
           echo "All required CEF flags validated"
 
       - name: Publish cef-vaapi to AUR
@@ -47,7 +46,7 @@ jobs:
             FindCEF.cmake
             README.md
             LICENSE
-            LICENSE.CEF-BSD3
+            LICENSE.ARCH-ISC
             REUSE.toml
             LICENSES/
           commit_username: ${{ secrets.AUR_USERNAME }}
