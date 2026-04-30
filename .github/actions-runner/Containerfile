@@ -1,12 +1,16 @@
-# CEF Vaapi GitHub Actions Runner Container
+# CEF VAAPI GitHub Actions runner image for igor.
 #
-# Build:   podman build -t localhost/cef-runner:latest .
-# Run:     podman run --rm -e RUNNER_PAT=<pat> localhost/cef-runner:latest
-# Service: use infra/igor/cef-runner.container (Quadlet)
+# This image contains Arch Linux build dependencies for the CEF PKGBUILD and
+# the GitHub Actions runner binary. Secrets are supplied only at runtime via
+# the Quadlet EnvironmentFile on igor; do not bake tokens into this image.
 
 FROM archlinux:latest
 
-# Install CEF build dependencies (from PKGBUILD makedepends)
+ARG RUNNER_VERSION=2.334.0
+ARG RUNNER_UID=1000
+ARG RUNNER_GID=1000
+
+# Install CEF runtime/build dependencies plus GitHub Actions tooling.
 RUN pacman -Syu --noconfirm && \
     pacman -S --noconfirm --needed \
       alsa-lib \
@@ -14,12 +18,15 @@ RUN pacman -Syu --noconfirm && \
       base-devel \
       clang \
       compiler-rt \
+      curl \
       dbus \
       fakeroot \
       git \
+      github-cli \
       gn \
       gperf \
       java-runtime-headless \
+      jq \
       libdrm \
       libffi \
       libpulse \
@@ -43,35 +50,35 @@ RUN pacman -Syu --noconfirm && \
       python-six \
       rsync \
       rust \
-      rust-bindgen \
-      jq \
-      curl \
-      && pacman -Scc --noconfirm && rm -rf /var/cache/pacman/pkg/*
+      rust-bindgen && \
+    pacman -Scc --noconfirm && \
+    rm -rf /var/cache/pacman/pkg/*
 
-# Create non-root user for the runner
-RUN useradd -m -d /home/runner -s /bin/bash runner && \
-    mkdir -p /cache && chown runner:runner /cache
+# Match the host user UID/GID when built by infra/igor/setup-runner.sh.
+RUN groupadd -g "${RUNNER_GID}" runner && \
+    useradd -m -u "${RUNNER_UID}" -g "${RUNNER_GID}" -d /home/runner -s /bin/bash runner && \
+    mkdir -p /runner /cache /opt/actions-runner && \
+    chown -R runner:runner /runner /cache /opt/actions-runner
 
-# Install GitHub Actions runner
-ARG RUNNER_VERSION=2.334.0
-RUN cd /home/runner && \
+# Install the GitHub Actions runner into /opt. Entrypoint copies it into the
+# persistent /runner volume on first start so runner registration survives
+# container/image recreation.
+RUN cd /opt/actions-runner && \
     curl -sL "https://github.com/actions/runner/releases/download/v${RUNNER_VERSION}/actions-runner-linux-x64-${RUNNER_VERSION}.tar.gz" \
       -o runner.tar.gz && \
     echo "048024cd2c848eb6f14d5646d56c13a4def2ae7ee3ad12122bee960c56f3d271  runner.tar.gz" | sha256sum -c && \
     tar xzf runner.tar.gz && \
     rm runner.tar.gz && \
-    chown -R runner:runner /home/runner
+    chown -R runner:runner /opt/actions-runner
 
-# Copy entrypoint
-COPY --chmod=755 .github/actions-runner/entrypoint.sh /entrypoint.sh
+COPY --chmod=755 entrypoint.sh /entrypoint.sh
 
 USER runner
-WORKDIR /home/runner
+WORKDIR /runner
 
 ENV RUNNER_REPO_URL=https://github.com/bnema/cef-vaapi
 ENV RUNNER_NAME=igor-cef-builder
 ENV RUNNER_LABELS=self-hosted,cef-builder,x64,linux
-ENV GITHUB_PAT=
-ENV RUNNER_TOKEN=
+ENV RUNNER_HOME=/runner
 
 ENTRYPOINT ["/entrypoint.sh"]
