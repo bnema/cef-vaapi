@@ -1,0 +1,124 @@
+name: Sync Arch cef
+
+on:
+  schedule:
+    # Run daily at 06:00 UTC to check for Arch cef updates
+    - cron: '0 6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  check-and-update:
+    name: Check for Arch cef update and sync
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Get current package version
+        id: current
+        run: |
+          source PKGBUILD
+          echo "pkgver=${pkgver}" >> "$GITHUB_OUTPUT"
+          echo "pkgrel=${pkgrel}" >> "$GITHUB_OUTPUT"
+          echo "_cef_commit=${_cef_commit}" >> "$GITHUB_OUTPUT"
+          echo "Current: cef-vaapi ${pkgver}-${pkgrel} (CEF commit ${_cef_commit})"
+
+      - name: Check latest Arch cef package version
+        id: upstream
+        run: |
+          # Fetch Arch's .SRCINFO to get current version info
+          UPSTREAM_SRCINFO=$(curl -sL "https://gitlab.archlinux.org/archlinux/packaging/packages/cef/-/raw/main/.SRCINFO?inline=false" 2>/dev/null)
+          if [ -z "$UPSTREAM_SRCINFO" ]; then
+            echo "WARNING: Could not fetch upstream Arch .SRCINFO, trying alternative..."
+            UPSTREAM_SRCINFO=$(curl -sL "https://gitlab.archlinux.org/archlinux/packaging/packages/cef/-/raw/main/.SRCINFO" 2>/dev/null)
+          fi
+          
+          if [ -z "$UPSTREAM_SRCINFO" ]; then
+            echo "ERROR: Could not fetch upstream metadata"
+            exit 0  # Soft exit, don't fail the workflow
+          fi
+          
+          echo "Fetched upstream metadata successfully"
+          echo "upstream_srcinfo<<EOF" >> "$GITHUB_OUTPUT"
+          echo "$UPSTREAM_SRCINFO" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+          
+          UPSTREAM_PKGVER=$(echo "$UPSTREAM_SRCINFO" | grep -m1 '^\tpkgver = ' | sed 's/.*= //')
+          UPSTREAM_PKGREL=$(echo "$UPSTREAM_SRCINFO" | grep -m1 '^\tpkgrel = ' | sed 's/.*= //')
+          echo "pkgver=${UPSTREAM_PKGVER}" >> "$GITHUB_OUTPUT"
+          echo "pkgrel=${UPSTREAM_PKGREL}" >> "$GITHUB_OUTPUT"
+          echo "Upstream: cef ${UPSTREAM_PKGVER}-${UPSTREAM_PKGREL}"
+
+      - name: Check if update is needed
+        id: check
+        run: |
+          CURRENT="${{ steps.current.outputs.pkgver }}-${{ steps.current.outputs.pkgrel }}"
+          UPSTREAM="${{ steps.upstream.pkgver }}-${{ steps.upstream.pkgrel }}"
+          
+          if [ "$CURRENT" = "$UPSTREAM" ]; then
+            echo "up_to_date=true" >> "$GITHUB_OUTPUT"
+            echo "cef-vaapi is up to date (${CURRENT})"
+          else
+            echo "up_to_date=false" >> "$GITHUB_OUTPUT"
+            echo "Update available: ${CURRENT} -> ${UPSTREAM}"
+          fi
+
+      - name: Run update-from-arch-cef.sh
+        if: steps.check.outputs.up_to_date == 'false'
+        run: |
+          bash scripts/update-from-arch-cef.sh
+          echo "Update script completed"
+
+      - name: Check PKGBUILD validity after update
+        if: steps.check.outputs.up_to_date == 'false'
+        run: |
+          bash -n scripts/update-from-arch-cef.sh
+          bash -n PKGBUILD
+          echo "PKGBUILD syntax OK"
+
+      - name: Validate invariants after update
+        if: steps.check.outputs.up_to_date == 'false'
+        run: |
+          grep -q 'use_vaapi=true' PKGBUILD || { echo "FAIL: use_vaapi=true missing after update"; exit 1; }
+          grep -q 'ffmpeg_branding="Chrome"' PKGBUILD || { echo "FAIL: ffmpeg_branding missing after update"; exit 1; }
+          grep -q 'proprietary_codecs=true' PKGBUILD || { echo "FAIL: proprietary_codecs missing after update"; exit 1; }
+          grep -q "conflicts=('cef')" PKGBUILD || { echo "FAIL: conflicts missing after update"; exit 1; }
+          grep -q 'cef::git+https://github.com/chromiumembedded/cef.git' PKGBUILD || { echo "FAIL: source alias changed after update"; exit 1; }
+          echo "All invariants preserved"
+
+      - name: Extract new package version
+        id: newver
+        if: steps.check.outputs.up_to_date == 'false'
+        run: |
+          source PKGBUILD
+          echo "pkgver=${pkgver}" >> "$GITHUB_OUTPUT"
+          echo "pkgrel=${pkgrel}" >> "$GITHUB_OUTPUT"
+          echo "New: cef-vaapi ${pkgver}-${pkgrel}"
+
+      - name: Create or update pull request
+        if: steps.check.outputs.up_to_date == 'false'
+        uses: peter-evans/create-pull-request@v7
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: "sync: cef-vaapi ${{ steps.current.outputs.pkgver }}-${{ steps.current.outputs.pkgrel }} → ${{ steps.newver.outputs.pkgver }}-${{ steps.newver.outputs.pkgrel }}"
+          title: "Sync cef-vaapi to Arch cef ${{ steps.upstream.pkgver }}-${{ steps.upstream.pkgrel }}"
+          body: |
+            ## Automated sync from Arch Linux cef package
+
+            Arch has updated its official `cef` package. This PR syncs `cef-vaapi` to match.
+
+            - Arch cef `${{ steps.current.outputs.pkgver }}-${{ steps.current.outputs.pkgrel }}` → Arch cef `${{ steps.upstream.pkgver }}-${{ steps.upstream.pkgrel }}`
+            - Updated PKGBUILD, assets, and .SRCINFO from upstream
+            - Minimal delta preserved: VAAPI flag, package metadata, guardrails, libva dep
+            - Proprietary codecs and bundled ffmpeg unchanged
+
+            After merging, the AUR publish workflow will deploy the updated source package.
+          branch: sync/arch-cef-${{ steps.upstream.pkgver }}-${{ steps.upstream.pkgrel }}
+          base: main
+          labels: automated, sync

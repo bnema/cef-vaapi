@@ -1,0 +1,20 @@
+# makepkg build artifacts
+*.pkg.tar*
+*.tar.gz
+*.tar.xz
+*.tar.zst
+*.log
+pkg/
+src/
+
+# AUR helper artifacts
+*.SRCINFO.bak
+
+# Temporary sync checkouts
+.cache/
+
+# Editor/IDE cruft
+*.swp
+*.swo
+*~
+.DS_Store

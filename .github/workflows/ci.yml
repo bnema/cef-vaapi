@@ -1,0 +1,72 @@
+name: CI
+
+on:
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  validate-pkgbuild:
+    name: Validate PKGBUILD invariants
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Check bash syntax of PKGBUILD and scripts
+        run: |
+          bash -n PKGBUILD
+          for f in scripts/*.sh; do
+            bash -n "$f"
+          done
+          echo "Bash syntax OK"
+
+      - name: Validate required media flags and VAAPI invariants
+        run: |
+          grep -q 'ffmpeg_branding="Chrome"' PKGBUILD && echo "OK: ffmpeg_branding=Chrome" || { echo "FAIL: ffmpeg_branding missing"; exit 1; }
+          grep -q 'proprietary_codecs=true' PKGBUILD && echo "OK: proprietary_codecs" || { echo "FAIL: proprietary_codecs missing"; exit 1; }
+          grep -q 'rtc_use_pipewire=true' PKGBUILD && echo "OK: rtc_use_pipewire" || { echo "FAIL: rtc_use_pipewire missing"; exit 1; }
+          grep -q 'link_pulseaudio=true' PKGBUILD && echo "OK: link_pulseaudio" || { echo "FAIL: link_pulseaudio missing"; exit 1; }
+          grep -q 'use_vaapi=true' PKGBUILD && echo "OK: use_vaapi=true" || { echo "FAIL: use_vaapi=true missing"; exit 1; }
+          ! grep -q 'use_vaapi=false' PKGBUILD && echo "OK: no use_vaapi=false" || { echo "FAIL: use_vaapi=false still present"; exit 1; }
+
+      - name: Validate no system ffmpeg
+        run: |
+          if grep -q '^\[ffmpeg\]=ffmpeg' PKGBUILD; then
+            echo "FAIL: _system_libs[ffmpeg] is enabled!"
+            exit 1
+          fi
+          echo "OK: bundled ffmpeg preserved"
+
+      - name: Validate package identity
+        run: |
+          grep -q "pkgname=cef-vaapi" PKGBUILD && echo "OK: pkgname" || { echo "FAIL: wrong pkgname"; exit 1; }
+          grep -q 'provides=("cef=' PKGBUILD && echo "OK: provides" || { echo "FAIL: provides missing"; exit 1; }
+          grep -q "conflicts=('cef')" PKGBUILD && echo "OK: conflicts" || { echo "FAIL: conflicts missing"; exit 1; }
+          ! grep -q "replaces=" PKGBUILD && echo "OK: no replaces" || { echo "FAIL: replaces present"; exit 1; }
+          grep -q "'libva'" PKGBUILD && echo "OK: libva dep" || { echo "FAIL: libva missing from depends"; exit 1; }
+
+      - name: Validate CEF source alias
+        run: |
+          grep -q 'cef::git+https://github.com/chromiumembedded/cef.git' PKGBUILD && echo "OK: correct source alias" || { echo "FAIL: wrong source alias"; exit 1; }
+          ! grep -q 'cef-vaapi::git+https://github.com/chromiumembedded/cef.git' PKGBUILD && echo "OK: no pkgname alias leak" || { echo "FAIL: source alias uses pkgname"; exit 1; }
+
+      - name: Check .SRCINFO freshness
+        run: |
+          pkgver=$(grep -oP 'pkgver=\K[^\s"]+' PKGBUILD | head -1)
+          pkgrel=$(grep -oP 'pkgrel=\K[^\s"]+' PKGBUILD | head -1)
+          if grep -q "pkgver = ${pkgver}" .SRCINFO && grep -q "pkgrel = ${pkgrel}" .SRCINFO; then
+            echo "OK: .SRCINFO matches PKGBUILD version"
+          else
+            echo "WARN: .SRCINFO version may be stale - regenerate with 'makepkg --printsrcinfo > .SRCINFO'"
+          fi
+
+      - name: Check local patches exist
+        run: |
+          for f in $(grep -oP '^\s+\K[\w.-]+\.patch' PKGBUILD); do
+            test -f "$f" && echo "OK: $f exists" || { echo "FAIL: $f missing"; exit 1; }
+          done
+          test -f FindCEF.cmake && echo "OK: FindCEF.cmake exists" || { echo "FAIL: FindCEF.cmake missing"; exit 1; }
