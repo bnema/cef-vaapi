@@ -1,0 +1,126 @@
+name: Build cef-vaapi
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - PKGBUILD
+      - '*.patch'
+      - FindCEF.cmake
+  schedule:
+    - cron: '0 8 * * 1'  # Every Monday at 08:00 UTC
+  workflow_dispatch:
+    inputs:
+      force_rebuild:
+        description: 'Force full rebuild even if version is unchanged'
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
+  build-cef:
+    name: Build CEF with VAAPI on self-hosted runner
+    if: github.event_name != 'pull_request' && github.event_name != 'pull_request_target'
+    runs-on: [self-hosted, linux, x64]
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Check version
+        id: version
+        run: |
+          source PKGBUILD
+          echo "pkgver=${pkgver}" >> "$GITHUB_OUTPUT"
+          echo "pkgrel=${pkgrel}" >> "$GITHUB_OUTPUT"
+          echo "Building cef-vaapi ${pkgver}-${pkgrel}"
+
+      - name: Check if release already exists
+        id: release_check
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="cef-vaapi-v${{ steps.version.outputs.pkgver }}-${{ steps.version.outputs.pkgrel }}"
+          if gh release view "$TAG" --json id 2>/dev/null; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "Release $TAG already exists"
+            if [ "${{ inputs.force_rebuild }}" != "true" ]; then
+              echo "Skipping build (release already exists, use force_rebuild=true to override)"
+            else
+              echo "exists=false" >> "$GITHUB_OUTPUT"
+              echo "Force rebuild requested"
+            fi
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "No existing release for $TAG"
+          fi
+
+      - name: Build CEF package
+        if: steps.release_check.outputs.exists == 'false'
+        id: build
+        run: |
+          source PKGBUILD
+          PKGNAME="cef-${pkgver}-${pkgrel}-x86_64.pkg.tar.zst"
+
+          # Use cache for Chromium source tarball and build artifacts
+          export XDG_CACHE_HOME=/cache
+          export SRCDEST=/cache/sources
+          mkdir -p "$SRCDEST"
+
+          # Build the package
+          makepkg -s --noconfirm
+
+          # Check the built package
+          ls -lh *.pkg.tar.zst
+
+          echo "package=$PKGNAME" >> "$GITHUB_OUTPUT"
+          echo "package_path=$(realpath *.pkg.tar.zst)" >> "$GITHUB_OUTPUT"
+
+      - name: Generate checksum
+        if: steps.release_check.outputs.exists == 'false'
+        id: checksum
+        run: |
+          SHA256=$(sha256sum "${{ steps.build.outputs.package }}" | cut -d' ' -f1)
+          echo "sha256=${SHA256}" >> "$GITHUB_OUTPUT"
+          echo "SHA256: ${SHA256}"
+
+      - name: Create GitHub Release
+        if: steps.release_check.outputs.exists == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="cef-vaapi-v${{ steps.version.outputs.pkgver }}-${{ steps.version.outputs.pkgrel }}"
+
+          gh release create "$TAG" \
+            --repo bnema/cef-vaapi \
+            --title "cef-vaapi ${{ steps.version.outputs.pkgver }}-${{ steps.version.outputs.pkgrel }}" \
+            --notes "CEF ${{ steps.version.outputs.pkgver }}-${{ steps.version.outputs.pkgrel }} with VAAPI and proprietary codecs enabled.
+
+            This binary package is published from the [self-hosted CEF builder](https://github.com/bnema/cef-vaapi/blob/main/.github/actions-runner/Containerfile).
+
+            **Artifacts:**
+            - \`cef-${{ steps.version.outputs.pkgver }}-${{ steps.version.outputs.pkgrel }}-x86_64.pkg.tar.zst\`
+            - SHA256: \`${{ steps.checksum.outputs.sha256 }}\`
+
+            To install:
+            \`\`\`
+            sudo pacman -U cef-${{ steps.version.outputs.pkgver }}-${{ steps.version.outputs.pkgrel }}-x86_64.pkg.tar.zst
+            \`\`\`
+            " \
+            "${{ steps.build.outputs.package_path }}"
+
+      - name: Publish cef-vaapi-bin to AUR
+        if: steps.release_check.outputs.exists == 'false'
+        uses: KSXGitHub/github-actions-deploy-aur@v4.1.3
+        with:
+          pkgname: cef-vaapi-bin
+          pkgbuild: ./aur/cef-vaapi-bin/PKGBUILD
+          commit_username: ${{ secrets.AUR_USERNAME }}
+          commit_email: ${{ secrets.AUR_EMAIL }}
+          ssh_private_key: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+          commit_message: "Update cef-vaapi-bin to ${{ steps.version.outputs.pkgver }}-${{ steps.version.outputs.pkgrel }}"
+          ssh_keyscan_types: rsa,ecdsa,ed25519

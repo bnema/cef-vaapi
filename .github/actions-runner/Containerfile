@@ -1,0 +1,77 @@
+# CEF Vaapi GitHub Actions Runner Container
+#
+# Build:   podman build -t localhost/cef-runner:latest .
+# Run:     podman run --rm -e RUNNER_PAT=<pat> localhost/cef-runner:latest
+# Service: use infra/igor/cef-runner.container (Quadlet)
+
+FROM archlinux:latest
+
+# Install CEF build dependencies (from PKGBUILD makedepends)
+RUN pacman -Syu --noconfirm && \
+    pacman -S --noconfirm --needed \
+      alsa-lib \
+      at-spi2-core \
+      base-devel \
+      clang \
+      compiler-rt \
+      dbus \
+      fakeroot \
+      git \
+      gn \
+      gperf \
+      java-runtime-headless \
+      libdrm \
+      libffi \
+      libpulse \
+      libva \
+      libxcomposite \
+      libxdamage \
+      libxkbcommon \
+      libxrandr \
+      libxtst \
+      lld \
+      mesa \
+      ninja \
+      nodejs \
+      npm \
+      nss \
+      pango \
+      pipewire \
+      python \
+      python-httplib2 \
+      python-pyparsing \
+      python-six \
+      rsync \
+      rust \
+      rust-bindgen \
+      jq \
+      curl \
+      && pacman -Scc --noconfirm && rm -rf /var/cache/pacman/pkg/*
+
+# Create non-root user for the runner
+RUN useradd -m -d /home/runner -s /bin/bash runner && \
+    mkdir -p /cache && chown runner:runner /cache
+
+# Install GitHub Actions runner
+ARG RUNNER_VERSION=2.334.0
+RUN cd /home/runner && \
+    curl -sL "https://github.com/actions/runner/releases/download/v${RUNNER_VERSION}/actions-runner-linux-x64-${RUNNER_VERSION}.tar.gz" \
+      -o runner.tar.gz && \
+    echo "048024cd2c848eb6f14d5646d56c13a4def2ae7ee3ad12122bee960c56f3d271  runner.tar.gz" | sha256sum -c && \
+    tar xzf runner.tar.gz && \
+    rm runner.tar.gz && \
+    chown -R runner:runner /home/runner
+
+# Copy entrypoint
+COPY --chmod=755 .github/actions-runner/entrypoint.sh /entrypoint.sh
+
+USER runner
+WORKDIR /home/runner
+
+ENV RUNNER_REPO_URL=https://github.com/bnema/cef-vaapi
+ENV RUNNER_NAME=igor-cef-builder
+ENV RUNNER_LABELS=self-hosted,cef-builder,x64,linux
+ENV GITHUB_PAT=
+ENV RUNNER_TOKEN=
+
+ENTRYPOINT ["/entrypoint.sh"]
