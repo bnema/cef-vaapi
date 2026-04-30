@@ -11,32 +11,7 @@ The official Arch [`cef`](https://archlinux.org/packages/extra/x86_64/cef/) pack
 - Explicit `libva` runtime dependency + driver notes
 - Build-time guardrails that fail if required flags drift
 
-Everything else — proprietary codecs, bundled ffmpeg, PipeWire, PulseAudio, build flags, patches — matches Arch's `cef` exactly.
-
-## Why you might want this
-
-If you use a CEF-based application (like [Dumber](https://github.com/bnema/dumber)) on AMD or Intel hardware with Wayland, the stock Arch CEF falls back to software video decode. Enabling `use_vaapi=true` restores VCN hardware decode on AMD GPUs.
-
-## Why you might NOT want this
-
-- **This is a source package.** Building CEF from source takes several hours. The validated local build used about 22 GB of build directory space, plus source downloads and normal package-manager overhead.
-- If you don't need VAAPI video decode in CEF, stick with the official Arch `cef`.
-- If you need VAAPI in Chromium itself, use Arch's `chromium` or `ungoogled-chromium` packages instead.
-
-## Validation evidence
-
-Tested locally with [Dumber](https://github.com/bnema/dumber) on Arch Linux / AMD RX 7900 GRE (RDNA3) / Wayland:
-
-- Custom `libcef.so` maps VAAPI symbols (`vaCreateContext`, `VaapiVideoDecoder::Decode`, `libva.so`)
-- `amdgpu_top` shows VCN activity during YouTube playback: MediaEngine ~14% avg, VCN_Unified ~13%
-- Dumber GPU process attributed non-zero Media/VCN usage
-- Proprietary codecs still present and functional
-
-This evidence came from a local Dumber validation run on AMD/Wayland before packaging.
-
-## What's NOT included
-
-VAAPI hardware video decode in CEF works with this package. However, a **separate accelerated-paint freeze issue** exists in Dumber's CEF OSR mode that this package does not address. See the [Dumber issue tracker](https://github.com/bnema/dumber/issues) for details.
+Everything else proprietary codecs, bundled ffmpeg, PipeWire, PulseAudio, build flags, patches matches Arch's `cef` exactly.
 
 ## How to build
 
