@@ -100,6 +100,11 @@ if "VAAPI" not in desc:
     desc = f"{desc} (VAAPI-enabled variant)"
 text = text[:match.start()] + f"pkgdesc={quote}{desc}{quote}" + text[match.end():]
 
+# Drop any upstream replacement policy. cef-vaapi should provide/conflict with cef,
+# but it must not replace Arch packages automatically.
+text = re.sub(r'(?ms)^replaces=\(.*?^\)\n*', '', text)
+text = re.sub(r'(?m)^replaces=[^\n]*\n*', '', text)
+
 # Add provides/conflicts immediately after pkgdesc.
 if "\nprovides=" not in text:
     text = re.sub(
@@ -237,7 +242,7 @@ _validate_cef_vaapi_invariants() {
     exit 1
   fi
 
-  if declare -p replaces >/dev/null 2>&1; then
+  if declare -p replaces >/dev/null 2>&1 && (( ${#replaces[@]} > 0 )); then
     echo "ERROR: replaces must not be set" >&2
     exit 1
   fi

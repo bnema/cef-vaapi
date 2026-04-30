@@ -195,7 +195,7 @@ _validate_cef_vaapi_invariants() {
     exit 1
   fi
 
-  if declare -p replaces >/dev/null 2>&1; then
+  if declare -p replaces >/dev/null 2>&1 && (( ${#replaces[@]} > 0 )); then
     echo "ERROR: replaces must not be set" >&2
     exit 1
   fi
