@@ -91,7 +91,7 @@ jobs:
           build_key=$(sha256sum PKGBUILD .SRCINFO FindCEF.cmake *.patch | sha256sum | cut -d' ' -f1)
           key_file="src/.cef-vaapi-build-key"
           out_dir="src/chromium-${_chromium_ver}/out/Release_GN_x64"
-          makepkg_args=(-s --noconfirm)
+          makepkg_args=(-s --noconfirm --force)
 
           if [[ -d "$out_dir" ]]; then
             if [[ ! -f "$key_file" ]]; then
@@ -218,7 +218,7 @@ jobs:
           EOF
           sed -i -E 's/^[[:space:]]{10}//' pkgbuild/cef-vaapi-bin/PKGBUILD
           bash -n pkgbuild/cef-vaapi-bin/PKGBUILD
-          makepkg --printsrcinfo -p pkgbuild/cef-vaapi-bin/PKGBUILD > pkgbuild/cef-vaapi-bin/.SRCINFO
+          (cd pkgbuild/cef-vaapi-bin && makepkg --printsrcinfo > .SRCINFO)
 
       - name: Publish cef-vaapi-bin to AUR
         if: steps.release_check.outputs.exists == 'false'
