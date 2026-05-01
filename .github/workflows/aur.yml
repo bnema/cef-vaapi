@@ -68,7 +68,7 @@ jobs:
             -v "$PWD:/work" \
             -w /work \
             archlinux:latest \
-            bash -lc 'pacman -Sy --noconfirm --needed pacman-contrib >/dev/null && makepkg --printsrcinfo > /tmp/.SRCINFO.generated && diff -u .SRCINFO /tmp/.SRCINFO.generated'
+            bash -lc 'pacman -Sy --noconfirm --needed base-devel >/dev/null && su nobody -s /bin/bash -c "cd /work && makepkg --printsrcinfo" > /tmp/.SRCINFO.generated && diff -u .SRCINFO /tmp/.SRCINFO.generated'
           echo ".SRCINFO is fresh"
 
       - name: Extract package metadata
