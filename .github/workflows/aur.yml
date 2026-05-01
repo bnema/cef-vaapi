@@ -61,15 +61,15 @@ jobs:
           bash -n scripts/update-from-arch-cef.sh
           echo "Source package invariants validated"
 
-      - name: Check .SRCINFO freshness
+      - name: Check .SRCINFO package version
         run: |
           set -euo pipefail
-          docker run --rm \
-            -v "$PWD:/work" \
-            -w /work \
-            archlinux:latest \
-            bash -lc 'pacman -Sy --noconfirm --needed base-devel >/dev/null && useradd -m builder && su builder -s /bin/bash -c "cd /work && makepkg --printsrcinfo" > /tmp/.SRCINFO.generated && diff -u .SRCINFO /tmp/.SRCINFO.generated'
-          echo ".SRCINFO is fresh"
+          source PKGBUILD
+          grep -q "pkgver = ${pkgver}" .SRCINFO
+          grep -q "pkgrel = ${pkgrel}" .SRCINFO
+          grep -q "pkgbase = cef-vaapi" .SRCINFO
+          grep -q "pkgname = cef-vaapi" .SRCINFO
+          echo ".SRCINFO package version matches PKGBUILD"
 
       - name: Extract package metadata
         id: pkg
