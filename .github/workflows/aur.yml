@@ -1,14 +1,31 @@
-name: AUR Publish
+name: Publish cef-vaapi source AUR
 
 on:
+  push:
+    branches:
+      - main
+    paths:
+      - PKGBUILD
+      - .SRCINFO
+      - '*.patch'
+      - FindCEF.cmake
+      - README.md
+      - LICENSE
+      - LICENSE.ARCH-ISC
+      - REUSE.toml
+      - LICENSES/**
+      - .github/workflows/aur.yml
+      - scripts/write-aur-known-hosts.sh
   workflow_dispatch:
 
 jobs:
   publish-aur:
     name: Publish cef-vaapi source package to AUR
+    # Never run public PR code with AUR SSH credentials.
+    if: github.event_name != 'pull_request' && github.event_name != 'pull_request_target'
     runs-on: ubuntu-latest
     concurrency:
-      group: cef-vaapi-aur-publish
+      group: cef-vaapi-source-aur-publish
       cancel-in-progress: true
 
     steps:
@@ -16,41 +33,95 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Extract package metadata
-        id: pkg
+      - name: Validate source package invariants
         run: |
-          source PKGBUILD
-          echo "pkgver=${pkgver}" >> "$GITHUB_OUTPUT"
-          echo "pkgrel=${pkgrel}" >> "$GITHUB_OUTPUT"
-          echo "Publishing cef-vaapi ${pkgver}-${pkgrel}"
+          set -euo pipefail
 
-      - name: Validate required CEF media and VAAPI flags
-        run: |
+          grep -q 'pkgname=cef-vaapi' PKGBUILD
           grep -q 'ffmpeg_branding="Chrome"' PKGBUILD
           grep -q 'proprietary_codecs=true' PKGBUILD
           grep -q 'rtc_use_pipewire=true' PKGBUILD
           grep -q 'link_pulseaudio=true' PKGBUILD
           grep -q 'use_vaapi=true' PKGBUILD
           grep -q 'cef::git+https://github.com/chromiumembedded/cef.git' PKGBUILD
-          ! grep -q '^[[:space:]]*\[ffmpeg\]=ffmpeg' PKGBUILD
-          ! grep -q '^[[:space:]]*replaces=' PKGBUILD
-          echo "All required CEF flags validated"
+          # shellcheck disable=SC2016 # literal PKGBUILD '$pkgver' is intentional here.
+          grep -q 'provides=("cef=$pkgver")' PKGBUILD
+          grep -q "conflicts=('cef')" PKGBUILD
+          grep -q "'libva'" PKGBUILD
+          if grep -q '^[[:space:]]*\[ffmpeg\]=ffmpeg' PKGBUILD; then
+            echo "FAIL: system ffmpeg must stay disabled"
+            exit 1
+          fi
+          if grep -q '^[[:space:]]*replaces=' PKGBUILD; then
+            echo "FAIL: replaces must not be set"
+            exit 1
+          fi
+
+          bash -n PKGBUILD
+          bash -n scripts/update-from-arch-cef.sh
+          echo "Source package invariants validated"
+
+      - name: Check .SRCINFO freshness
+        run: |
+          set -euo pipefail
+          docker run --rm \
+            -v "$PWD:/work" \
+            -w /work \
+            archlinux:latest \
+            bash -lc 'pacman -Sy --noconfirm --needed pacman-contrib >/dev/null && makepkg --printsrcinfo > /tmp/.SRCINFO.generated && diff -u .SRCINFO /tmp/.SRCINFO.generated'
+          echo ".SRCINFO is fresh"
+
+      - name: Extract package metadata
+        id: pkg
+        run: |
+          set -euo pipefail
+          source PKGBUILD
+          echo "pkgver=${pkgver}" >> "$GITHUB_OUTPUT"
+          echo "pkgrel=${pkgrel}" >> "$GITHUB_OUTPUT"
+          echo "Publishing cef-vaapi ${pkgver}-${pkgrel}"
 
       - name: Publish cef-vaapi to AUR
-        uses: KSXGitHub/github-actions-deploy-aur@v4.1.3
-        with:
-          pkgname: cef-vaapi
-          pkgbuild: ./PKGBUILD
-          assets: |
-            *.patch
-            FindCEF.cmake
-            README.md
-            LICENSE
-            LICENSE.ARCH-ISC
-            REUSE.toml
-            LICENSES/
-          commit_username: ${{ secrets.AUR_USERNAME }}
-          commit_email: ${{ secrets.AUR_EMAIL }}
-          ssh_private_key: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
-          commit_message: "Update cef-vaapi to ${{ steps.pkg.outputs.pkgver }}-${{ steps.pkg.outputs.pkgrel }}"
-          ssh_keyscan_types: rsa,ecdsa,ed25519
+        env:
+          AUR_USERNAME: ${{ secrets.AUR_USERNAME }}
+          AUR_EMAIL: ${{ secrets.AUR_EMAIL }}
+          AUR_SSH_PRIVATE_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          test -n "$AUR_USERNAME"
+          test -n "$AUR_EMAIL"
+          test -n "$AUR_SSH_PRIVATE_KEY"
+
+          install -d -m 700 "$HOME/.ssh"
+          printf '%s\n' "$AUR_SSH_PRIVATE_KEY" > "$HOME/.ssh/aur"
+          chmod 600 "$HOME/.ssh/aur"
+          bash scripts/write-aur-known-hosts.sh "$HOME/.ssh/known_hosts"
+
+          export GIT_SSH_COMMAND="ssh -i $HOME/.ssh/aur -o IdentitiesOnly=yes"
+          git config --global user.name "$AUR_USERNAME"
+          git config --global user.email "$AUR_EMAIL"
+
+          rm -rf /tmp/cef-vaapi-source-aur
+          if ! git clone ssh://aur@aur.archlinux.org/cef-vaapi.git /tmp/cef-vaapi-source-aur; then
+            mkdir -p /tmp/cef-vaapi-source-aur
+            git -C /tmp/cef-vaapi-source-aur init --initial-branch=master
+            git -C /tmp/cef-vaapi-source-aur remote add origin ssh://aur@aur.archlinux.org/cef-vaapi.git
+          fi
+
+          find /tmp/cef-vaapi-source-aur -mindepth 1 -maxdepth 1 \
+            ! -name .git \
+            -exec rm -rf {} +
+
+          shopt -s nullglob
+          patch_files=(./*.patch)
+          cp PKGBUILD .SRCINFO /tmp/cef-vaapi-source-aur/
+          cp "${patch_files[@]}" FindCEF.cmake README.md LICENSE LICENSE.ARCH-ISC REUSE.toml /tmp/cef-vaapi-source-aur/
+          cp -a LICENSES /tmp/cef-vaapi-source-aur/
+
+          cd /tmp/cef-vaapi-source-aur
+          git add --all
+          if git diff --cached --quiet; then
+            echo "AUR cef-vaapi already up to date"
+          else
+            git commit -m "Update cef-vaapi to ${{ steps.pkg.outputs.pkgver }}-${{ steps.pkg.outputs.pkgrel }}"
+            git push origin master
+          fi

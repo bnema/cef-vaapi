@@ -82,7 +82,7 @@ jobs:
           grep -q "conflicts=('cef')" PKGBUILD || { echo "FAIL: conflicts missing after update"; exit 1; }
           grep -q 'cef::git+https://github.com/chromiumembedded/cef.git' PKGBUILD || { echo "FAIL: source alias changed after update"; exit 1; }
           ! grep -q '^[[:space:]]*\[ffmpeg\]=ffmpeg' PKGBUILD || { echo "FAIL: system ffmpeg enabled after update"; exit 1; }
-          ! grep -q '^replaces=' PKGBUILD || { echo "FAIL: replaces present after update"; exit 1; }
+          ! grep -q '^[[:space:]]*replaces=' PKGBUILD || { echo "FAIL: replaces present after update"; exit 1; }
           echo "All invariants preserved"
 
       - name: Extract new package version
@@ -111,7 +111,7 @@ jobs:
             - Minimal delta preserved: VAAPI flag, package metadata, guardrails, libva dep
             - Proprietary codecs and bundled ffmpeg unchanged
 
-            After merging, the manual AUR publish workflow can deploy the updated source package.
+            After merging to `main`, repository automation publishes the committed source package to AUR as `cef-vaapi`, then builds a matching VAAPI-enabled binary on the trusted self-hosted runner, creates a GitHub Release, and publishes `cef-vaapi-bin` to AUR.
           branch: sync/arch-cef-${{ steps.upstream.outputs.pkgver }}-${{ steps.upstream.outputs.pkgrel }}
           base: main
           labels: automated, sync

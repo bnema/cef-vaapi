@@ -1,9 +1,6 @@
 name: Build and publish cef-vaapi-bin
 
 on:
-  schedule:
-    # Check daily for new Arch cef releases and build a binary if missing.
-    - cron: '0 8 * * *'
   workflow_dispatch:
     inputs:
       force_rebuild:
@@ -18,8 +15,8 @@ on:
       - .SRCINFO
       - '*.patch'
       - FindCEF.cmake
-      - scripts/update-from-arch-cef.sh
       - .github/workflows/build-vaapi.yml
+      - scripts/write-aur-known-hosts.sh
 
 permissions:
   contents: write
@@ -43,11 +40,6 @@ jobs:
           fetch-depth: 0
           # Preserve src/chromium-*/out so interrupted self-hosted builds can resume.
           clean: false
-
-      - name: Sync packaging from Arch cef
-        run: |
-          bash scripts/update-from-arch-cef.sh
-          git diff -- PKGBUILD .SRCINFO '*.patch' FindCEF.cmake || true
 
       - name: Extract package metadata
         id: pkg
@@ -235,7 +227,7 @@ jobs:
           install -d -m 700 "$HOME/.ssh"
           printf '%s\n' "$AUR_SSH_PRIVATE_KEY" > "$HOME/.ssh/aur"
           chmod 600 "$HOME/.ssh/aur"
-          ssh-keyscan -t rsa,ecdsa,ed25519 aur.archlinux.org >> "$HOME/.ssh/known_hosts"
+          bash scripts/write-aur-known-hosts.sh "$HOME/.ssh/known_hosts"
 
           export GIT_SSH_COMMAND="ssh -i $HOME/.ssh/aur -o IdentitiesOnly=yes"
           git config --global user.name "$AUR_USERNAME"
@@ -244,7 +236,7 @@ jobs:
           rm -rf /tmp/cef-vaapi-bin-aur
           if ! git clone ssh://aur@aur.archlinux.org/cef-vaapi-bin.git /tmp/cef-vaapi-bin-aur; then
             mkdir -p /tmp/cef-vaapi-bin-aur
-            git -C /tmp/cef-vaapi-bin-aur init
+            git -C /tmp/cef-vaapi-bin-aur init --initial-branch=master
             git -C /tmp/cef-vaapi-bin-aur remote add origin ssh://aur@aur.archlinux.org/cef-vaapi-bin.git
           fi
           cp pkgbuild/cef-vaapi-bin/PKGBUILD pkgbuild/cef-vaapi-bin/.SRCINFO /tmp/cef-vaapi-bin-aur/
