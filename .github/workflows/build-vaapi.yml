@@ -102,10 +102,10 @@ jobs:
               echo "Found matching Chromium build tree; resuming with --noextract --noprepare."
               makepkg_args+=(--noextract --noprepare)
             else
-              echo "Existing Chromium build tree does not match packaging inputs; starting clean."
-              rm -rf src pkg
-              mkdir -p src
+              echo "Found existing Chromium build tree with a different packaging key; preserving it and resuming."
+              echo "If patches or source preparation changed incompatibly, remove src/ on the runner and rerun."
               printf '%s\n' "$build_key" > "$key_file"
+              makepkg_args+=(--noextract --noprepare)
             fi
           else
             rm -rf src pkg

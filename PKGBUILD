@@ -334,7 +334,7 @@ build() {
   export PATH="$PATH:$PWD/third_party/depot_tools"
 
   # Use system ninja, remove the wrapper which only supports x86_64
-  rm third_party/depot_tools/ninja
+  rm -f third_party/depot_tools/ninja
 
   # GN defines passed to CEF's gclient_hook.py via GN_DEFINES env var
   local _flags=(

@@ -169,6 +169,8 @@ for flag in required_flags:
 
 if re.search(r'(?m)^[ \t]*\[ffmpeg\]=', text):
     fail("_system_libs[ffmpeg] is enabled; it must remain commented or absent")
+text = replace_once(text, "  rm third_party/depot_tools/ninja", "  rm -f third_party/depot_tools/ninja", "depot_tools ninja removal")
+
 if "replaces=" in text:
     fail("replaces must not be set")
 if "cef-vaapi::git+https://github.com/chromiumembedded/cef.git" in text:
