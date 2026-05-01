@@ -19,6 +19,7 @@ on:
       - '*.patch'
       - FindCEF.cmake
       - scripts/update-from-arch-cef.sh
+      - .github/workflows/build-vaapi.yml
 
 permissions:
   contents: write
@@ -29,7 +30,9 @@ jobs:
     # Never run public PR code on the self-hosted runner.
     if: github.event_name != 'pull_request' && github.event_name != 'pull_request_target'
     runs-on: [self-hosted, cef-builder, linux, x64]
-    timeout-minutes: 720
+    # CEF can spend many hours in the final Chromium/CEF link/distribution steps.
+    # Keep this below GitHub's 24h token lifetime so release publishing still works.
+    timeout-minutes: 1380
     concurrency:
       group: cef-vaapi-build-${{ github.ref }}
       cancel-in-progress: true
@@ -38,6 +41,8 @@ jobs:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
+          # Preserve src/chromium-*/out so interrupted self-hosted builds can resume.
+          clean: false
 
       - name: Sync packaging from Arch cef
         run: |
@@ -82,7 +87,33 @@ jobs:
           export SRCDEST=/cache/sources
           mkdir -p "$SRCDEST"
 
-          makepkg -s --noconfirm
+          source PKGBUILD
+          build_key=$(sha256sum PKGBUILD .SRCINFO FindCEF.cmake *.patch | sha256sum | cut -d' ' -f1)
+          key_file="src/.cef-vaapi-build-key"
+          out_dir="src/chromium-${_chromium_ver}/out/Release_GN_x64"
+          makepkg_args=(-s --noconfirm)
+
+          if [[ -d "$out_dir" ]]; then
+            if [[ ! -f "$key_file" ]]; then
+              echo "Found existing Chromium build tree without cache key; resuming it once."
+              printf '%s\n' "$build_key" > "$key_file"
+              makepkg_args+=(--noextract --noprepare)
+            elif [[ "$(cat "$key_file")" == "$build_key" ]]; then
+              echo "Found matching Chromium build tree; resuming with --noextract --noprepare."
+              makepkg_args+=(--noextract --noprepare)
+            else
+              echo "Existing Chromium build tree does not match packaging inputs; starting clean."
+              rm -rf src pkg
+              mkdir -p src
+              printf '%s\n' "$build_key" > "$key_file"
+            fi
+          else
+            rm -rf src pkg
+            mkdir -p src
+            printf '%s\n' "$build_key" > "$key_file"
+          fi
+
+          makepkg "${makepkg_args[@]}"
           test -f "${{ steps.pkg.outputs.pkgfile }}"
           ls -lh "${{ steps.pkg.outputs.pkgfile }}"
           echo "package_path=$(realpath "${{ steps.pkg.outputs.pkgfile }}")" >> "$GITHUB_OUTPUT"
