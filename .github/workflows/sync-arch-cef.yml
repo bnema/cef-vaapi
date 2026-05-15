@@ -61,10 +61,36 @@ jobs:
         if: steps.check.outputs.up_to_date == 'false'
         run: |
           docker run --rm \
+            -e HOST_UID="$(id -u)" \
+            -e HOST_GID="$(id -g)" \
             -v "$PWD:/work" \
             -w /work \
             archlinux:latest \
-            bash -lc 'pacman -Syu --noconfirm base-devel git python && bash scripts/update-from-arch-cef.sh'
+            bash -lc '
+              set -euo pipefail
+
+              pacman -Syu --noconfirm base-devel git python shadow
+
+              # makepkg refuses to run as root; use the GitHub runner uid/gid.
+              host_uid="${HOST_UID:?HOST_UID is required}"
+              host_gid="${HOST_GID:?HOST_GID is required}"
+
+              if [ "$host_uid" = "0" ]; then
+                echo "Refusing to run update-from-arch-cef.sh as root" >&2
+                exit 1
+              fi
+
+              if ! getent group "$host_gid" >/dev/null; then
+                groupadd --gid "$host_gid" builder
+              fi
+
+              if ! getent passwd "$host_uid" >/dev/null; then
+                useradd --uid "$host_uid" --gid "$host_gid" --create-home --shell /bin/bash builder
+              fi
+
+              builder_user=$(getent passwd "$host_uid" | cut -d: -f1)
+              su "$builder_user" -c "cd /work && bash scripts/update-from-arch-cef.sh"
+            '
 
       - name: Check PKGBUILD validity after update
         if: steps.check.outputs.up_to_date == 'false'
