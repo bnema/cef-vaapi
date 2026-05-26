@@ -141,7 +141,21 @@ jobs:
             printf '%s\n' "$build_key" > "$key_file"
           fi
 
-          makepkg "${makepkg_args[@]}"
+          max_attempts=2
+          for attempt in $(seq 1 "$max_attempts"); do
+            if makepkg "${makepkg_args[@]}"; then
+              break
+            fi
+
+            if [ "$attempt" -eq "$max_attempts" ]; then
+              echo "makepkg failed after ${max_attempts} attempts"
+              exit 1
+            fi
+
+            echo "makepkg failed on attempt ${attempt}; retrying once against the preserved build tree"
+            makepkg_args=(-s --noconfirm --force --noextract --noprepare)
+          done
+
           test -f "${{ steps.pkg.outputs.pkgfile }}"
           ls -lh "${{ steps.pkg.outputs.pkgfile }}"
           echo "package_path=$(realpath "${{ steps.pkg.outputs.pkgfile }}")" >> "$GITHUB_OUTPUT"
