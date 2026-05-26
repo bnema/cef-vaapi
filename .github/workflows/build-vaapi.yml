@@ -86,13 +86,22 @@ jobs:
               sort -u
           )
 
-          printf 'Installing build dependencies:\n'
+          printf 'Checking build dependencies:\n'
           printf '  %s\n' "${packages[@]}"
 
+          mapfile -t missing_packages < <(pacman -T "${packages[@]}")
+          if [ "${#missing_packages[@]}" -eq 0 ]; then
+            echo "All build dependencies are already installed"
+            exit 0
+          fi
+
+          printf 'Installing missing build dependencies:\n'
+          printf '  %s\n' "${missing_packages[@]}"
+
           if [ "$(id -u)" -eq 0 ]; then
-            pacman -S --needed --noconfirm "${packages[@]}"
+            pacman -S --needed --noconfirm "${missing_packages[@]}"
           else
-            sudo -n pacman -S --needed --noconfirm "${packages[@]}"
+            sudo -n pacman -S --needed --noconfirm "${missing_packages[@]}"
           fi
 
       - name: Build cef-vaapi package
