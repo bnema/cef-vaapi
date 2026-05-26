@@ -7,8 +7,15 @@ on:
   workflow_dispatch:
 
 permissions:
+  # Required to dispatch aur.yml and build-vaapi.yml via gh workflow run.
+  actions: write
+  # Required to push validated sync commits directly to main.
   contents: write
-  pull-requests: write
+
+concurrency:
+  # Do not cancel an in-flight sync while it is pushing and dispatching builds.
+  group: sync-arch-cef
+  cancel-in-progress: false
 
 jobs:
   check-and-update:
@@ -24,9 +31,11 @@ jobs:
         id: current
         run: |
           source PKGBUILD
-          echo "pkgver=${pkgver}" >> "$GITHUB_OUTPUT"
-          echo "pkgrel=${pkgrel}" >> "$GITHUB_OUTPUT"
-          echo "_cef_commit=${_cef_commit}" >> "$GITHUB_OUTPUT"
+          {
+            echo "pkgver=${pkgver}"
+            echo "pkgrel=${pkgrel}"
+            echo "_cef_commit=${_cef_commit}"
+          } >> "$GITHUB_OUTPUT"
           echo "Current: cef-vaapi ${pkgver}-${pkgrel} (CEF commit ${_cef_commit})"
 
       - name: Check latest Arch cef package version
@@ -39,8 +48,10 @@ jobs:
           test -n "$upstream_pkgver"
           test -n "$upstream_pkgrel"
 
-          echo "pkgver=${upstream_pkgver}" >> "$GITHUB_OUTPUT"
-          echo "pkgrel=${upstream_pkgrel}" >> "$GITHUB_OUTPUT"
+          {
+            echo "pkgver=${upstream_pkgver}"
+            echo "pkgrel=${upstream_pkgrel}"
+          } >> "$GITHUB_OUTPUT"
           echo "Upstream: cef ${upstream_pkgver}-${upstream_pkgrel}"
 
       - name: Check if update is needed
@@ -116,28 +127,43 @@ jobs:
         if: steps.check.outputs.up_to_date == 'false'
         run: |
           source PKGBUILD
-          echo "pkgver=${pkgver}" >> "$GITHUB_OUTPUT"
-          echo "pkgrel=${pkgrel}" >> "$GITHUB_OUTPUT"
+          {
+            echo "pkgver=${pkgver}"
+            echo "pkgrel=${pkgrel}"
+          } >> "$GITHUB_OUTPUT"
           echo "New: cef-vaapi ${pkgver}-${pkgrel}"
 
-      - name: Create or update pull request
+      - name: Commit synced package to main
+        id: sync_commit
         if: steps.check.outputs.up_to_date == 'false'
-        uses: peter-evans/create-pull-request@v7
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          commit-message: "sync: cef-vaapi ${{ steps.current.outputs.pkgver }}-${{ steps.current.outputs.pkgrel }} → ${{ steps.newver.outputs.pkgver }}-${{ steps.newver.outputs.pkgrel }}"
-          title: "Sync cef-vaapi to Arch cef ${{ steps.upstream.outputs.pkgver }}-${{ steps.upstream.outputs.pkgrel }}"
-          body: |
-            ## Automated sync from Arch Linux cef package
+        env:
+          CURRENT_VERSION: ${{ steps.current.outputs.pkgver }}-${{ steps.current.outputs.pkgrel }}
+          NEW_VERSION: ${{ steps.newver.outputs.pkgver }}-${{ steps.newver.outputs.pkgrel }}
+        run: |
+          set -euo pipefail
 
-            Arch has updated its official `cef` package. This PR syncs `cef-vaapi` to match.
+          if [ -z "$(git status --porcelain --untracked-files=all)" ]; then
+            echo "No file changes after sync; nothing to commit"
+            echo "did_commit=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
 
-            - Arch cef `${{ steps.current.outputs.pkgver }}-${{ steps.current.outputs.pkgrel }}` → Arch cef `${{ steps.upstream.outputs.pkgver }}-${{ steps.upstream.outputs.pkgrel }}`
-            - Updated PKGBUILD, assets, and .SRCINFO from upstream
-            - Minimal delta preserved: VAAPI flag, package metadata, guardrails, libva dep
-            - Proprietary codecs and bundled ffmpeg unchanged
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add PKGBUILD .SRCINFO REUSE.toml
+          git add -- '*.patch'
+          git commit -m "sync: cef-vaapi ${CURRENT_VERSION} → ${NEW_VERSION}"
+          git push origin HEAD:main
+          echo "did_commit=true" >> "$GITHUB_OUTPUT"
 
-            After merging to `main`, repository automation publishes the committed source package to AUR as `cef-vaapi`, then builds a matching VAAPI-enabled binary on the trusted self-hosted runner, creates a GitHub Release, and publishes `cef-vaapi-bin` to AUR.
-          branch: sync/arch-cef-${{ steps.upstream.outputs.pkgver }}-${{ steps.upstream.outputs.pkgrel }}
-          base: main
-          labels: automated, sync
+      - name: Dispatch publish and binary build workflows
+        if: steps.sync_commit.outputs.did_commit == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NEW_VERSION: ${{ steps.newver.outputs.pkgver }}-${{ steps.newver.outputs.pkgrel }}
+        run: |
+          set -euo pipefail
+
+          gh workflow run aur.yml --ref main
+          gh workflow run build-vaapi.yml --ref main
+          echo "Dispatched source AUR publish and binary build workflows for cef-vaapi ${NEW_VERSION}"
