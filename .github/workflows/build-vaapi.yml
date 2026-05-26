@@ -3,6 +3,7 @@ name: Build and publish cef-vaapi-bin
 on:
   workflow_dispatch:
     inputs:
+      # Also useful when a push-triggered build needs to be forced manually.
       force_rebuild:
         description: 'Rebuild even if the GitHub Release already exists'
         type: boolean
