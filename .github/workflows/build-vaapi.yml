@@ -152,7 +152,10 @@ jobs:
               exit 1
             fi
 
-            echo "makepkg failed on attempt ${attempt}; retrying once against the preserved build tree"
+            echo "makepkg failed on attempt ${attempt}; cleaning transient generated metadata before retry"
+            find "$out_dir/gen" -name '*.mojom-module' -delete 2>/dev/null || true
+            rm -rf "$out_dir/gen/mojo/public/tools/bindings"
+            echo "Retrying once against the preserved build tree"
             makepkg_args=(-s --noconfirm --force --noextract --noprepare)
           done
 
