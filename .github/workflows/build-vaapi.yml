@@ -47,10 +47,12 @@ jobs:
           source PKGBUILD
           pkgfile="cef-vaapi-${pkgver}-${pkgrel}-x86_64.pkg.tar.zst"
           tag="cef-vaapi-v${pkgver}-${pkgrel}"
-          echo "pkgver=${pkgver}" >> "$GITHUB_OUTPUT"
-          echo "pkgrel=${pkgrel}" >> "$GITHUB_OUTPUT"
-          echo "pkgfile=${pkgfile}" >> "$GITHUB_OUTPUT"
-          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+          {
+            echo "pkgver=${pkgver}"
+            echo "pkgrel=${pkgrel}"
+            echo "pkgfile=${pkgfile}"
+            echo "tag=${tag}"
+          } >> "$GITHUB_OUTPUT"
           echo "Building ${pkgfile} from Arch cef ${pkgver}-${pkgrel}"
 
       - name: Check whether binary release already exists
@@ -71,6 +73,27 @@ jobs:
             echo "No existing release for ${{ steps.pkg.outputs.tag }}"
           fi
 
+      - name: Prepare build dependencies
+        if: steps.release_check.outputs.exists == 'false'
+        run: |
+          set -euo pipefail
+
+          mapfile -t packages < <(
+            source PKGBUILD
+            printf '%s\n' "${depends[@]}" "${makedepends[@]}" |
+              sed -E 's/[<>=].*$//' |
+              sort -u
+          )
+
+          printf 'Installing build dependencies:\n'
+          printf '  %s\n' "${packages[@]}"
+
+          if [ "$(id -u)" -eq 0 ]; then
+            pacman -S --needed --noconfirm "${packages[@]}"
+          else
+            sudo -n pacman -S --needed --noconfirm "${packages[@]}"
+          fi
+
       - name: Build cef-vaapi package
         if: steps.release_check.outputs.exists == 'false'
         id: build
@@ -80,7 +103,10 @@ jobs:
           mkdir -p "$SRCDEST"
 
           source PKGBUILD
-          build_key=$(sha256sum PKGBUILD .SRCINFO FindCEF.cmake *.patch | sha256sum | cut -d' ' -f1)
+          shopt -s nullglob
+          patches=(./*.patch)
+          shopt -u nullglob
+          build_key=$(sha256sum PKGBUILD .SRCINFO FindCEF.cmake "${patches[@]}" | sha256sum | cut -d' ' -f1)
           key_file="src/.cef-vaapi-build-key"
           out_dir="src/chromium-${_chromium_ver}/out/Release_GN_x64"
           makepkg_args=(-s --noconfirm --force)
