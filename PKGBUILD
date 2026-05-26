@@ -5,7 +5,7 @@
 # Note: This PKGBUILD and the chromium PKGBUILD are loosely kept in sync to ease maintenance.
 # As such care should be taken to minimize the differences between these PKGBUILDs.
 pkgname=cef-vaapi
-# pkgver is updated automatically.
+# pkgver is updated automatically by the daily Arch cef sync workflow.
 # To update this package, update the _cef_commit and _chromium_ver variables.
 # For the CEF versioning scheme, see
 # https://chromiumembedded.github.io/cef/branches_and_building#version-number-format
