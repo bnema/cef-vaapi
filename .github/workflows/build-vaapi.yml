@@ -66,8 +66,14 @@ jobs:
               echo "exists=false" >> "$GITHUB_OUTPUT"
               echo "Release exists, but force_rebuild=true"
             else
+              tmpdir=$(mktemp -d)
+              trap 'rm -rf "$tmpdir"' EXIT
+              gh release download "${{ steps.pkg.outputs.tag }}" --pattern SHA256SUMS --dir "$tmpdir" --clobber
+              sha256=$(awk -v pkg="${{ steps.pkg.outputs.pkgfile }}" '$2 == pkg { print $1 }' "$tmpdir/SHA256SUMS")
+              test -n "$sha256"
               echo "exists=true" >> "$GITHUB_OUTPUT"
-              echo "Release already exists; nothing to build"
+              echo "sha256=$sha256" >> "$GITHUB_OUTPUT"
+              echo "Release already exists; will skip build and publish cef-vaapi-bin from release metadata"
             fi
           else
             echo "exists=false" >> "$GITHUB_OUTPUT"
@@ -219,8 +225,13 @@ jobs:
             "cef-vaapi-${{ steps.pkg.outputs.pkgver }}-${{ steps.pkg.outputs.pkgrel }}-SRCINFO"
 
       - name: Generate cef-vaapi-bin PKGBUILD
-        if: steps.release_check.outputs.exists == 'false'
         run: |
+          sha256="${{ steps.checksum.outputs.sha256 }}"
+          if [ -z "$sha256" ]; then
+            sha256="${{ steps.release_check.outputs.sha256 }}"
+          fi
+          test -n "$sha256"
+
           mkdir -p pkgbuild/cef-vaapi-bin
           cat > pkgbuild/cef-vaapi-bin/PKGBUILD <<EOF
           # Maintainer: bnema <b@bnema.dev>
@@ -255,7 +266,7 @@ jobs:
             'libva-utils: VAAPI diagnostics such as vainfo'
           )
           source=("cef-vaapi-\${pkgver}-\${pkgrel}-x86_64.pkg.tar.zst::https://github.com/bnema/cef-vaapi/releases/download/cef-vaapi-v\${pkgver}-\${pkgrel}/cef-vaapi-\${pkgver}-\${pkgrel}-x86_64.pkg.tar.zst")
-          sha256sums=('${{ steps.checksum.outputs.sha256 }}')
+          sha256sums=('${sha256}')
 
           package() {
             bsdtar -xpf "\${srcdir}/cef-vaapi-\${pkgver}-\${pkgrel}-x86_64.pkg.tar.zst" -C "\${pkgdir}" usr
@@ -265,8 +276,25 @@ jobs:
           bash -n pkgbuild/cef-vaapi-bin/PKGBUILD
           (cd pkgbuild/cef-vaapi-bin && makepkg --printsrcinfo > .SRCINFO)
 
+      - name: Prepare publish dependencies
+        run: |
+          set -euo pipefail
+          mapfile -t missing_packages < <(pacman -T git openssh)
+          if [ "${#missing_packages[@]}" -eq 0 ]; then
+            echo "All publish dependencies are already installed"
+            exit 0
+          fi
+
+          printf 'Installing missing publish dependencies:\n'
+          printf '  %s\n' "${missing_packages[@]}"
+
+          if [ "$(id -u)" -eq 0 ]; then
+            pacman -S --needed --noconfirm "${missing_packages[@]}"
+          else
+            sudo -n pacman -S --needed --noconfirm "${missing_packages[@]}"
+          fi
+
       - name: Publish cef-vaapi-bin to AUR
-        if: steps.release_check.outputs.exists == 'false'
         env:
           AUR_USERNAME: ${{ secrets.AUR_USERNAME }}
           AUR_EMAIL: ${{ secrets.AUR_EMAIL }}
