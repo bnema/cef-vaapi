@@ -69,8 +69,16 @@ jobs:
               tmpdir=$(mktemp -d)
               trap 'rm -rf "$tmpdir"' EXIT
               gh release download "${{ steps.pkg.outputs.tag }}" --pattern SHA256SUMS --dir "$tmpdir" --clobber
-              sha256=$(awk -v pkg="${{ steps.pkg.outputs.pkgfile }}" '$2 == pkg { print $1 }' "$tmpdir/SHA256SUMS")
-              test -n "$sha256"
+              mapfile -t sha256_matches < <(awk -v pkg="${{ steps.pkg.outputs.pkgfile }}" '$2 == pkg { print $1 }' "$tmpdir/SHA256SUMS")
+              if [ "${#sha256_matches[@]}" -ne 1 ]; then
+                echo "Expected exactly one SHA256SUMS entry for ${{ steps.pkg.outputs.pkgfile }}, found ${#sha256_matches[@]}" >&2
+                exit 1
+              fi
+              sha256="${sha256_matches[0]}"
+              if [[ ! "$sha256" =~ ^[0-9a-fA-F]{64}$ ]]; then
+                echo "Invalid SHA256 for ${{ steps.pkg.outputs.pkgfile }} in SHA256SUMS" >&2
+                exit 1
+              fi
               echo "exists=true" >> "$GITHUB_OUTPUT"
               echo "sha256=$sha256" >> "$GITHUB_OUTPUT"
               echo "Release already exists; will skip build and publish cef-vaapi-bin from release metadata"
