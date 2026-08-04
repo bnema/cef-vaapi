@@ -9,12 +9,12 @@ pkgname=cef-vaapi
 # To update this package, update the _cef_commit and _chromium_ver variables.
 # For the CEF versioning scheme, see
 # https://chromiumembedded.github.io/cef/branches_and_building#version-number-format
-pkgver=150.0.17
+pkgver=151.3.14
 # See https://github.com/chromiumembedded/cef/tree/<release branch>
 # Also see https://chromiumembedded.github.io/cef/branches_and_building
-_cef_commit=94c17267eb4595a1ad17fb67dee6cdb8ded41c6d
+_cef_commit=5d67476b12f718c8388918d1740aeec27f6b2b80
 # the chromium version must match CHROMIUM_BUILD_COMPATIBILITY.txt in the CEF repo
-_chromium_ver=150.0.7871.187
+_chromium_ver=151.0.7922.72
 _system_clang=1
 pkgrel=1
 pkgdesc="Chromium Embedded Framework (CEF), simple framework for embedding Chromium-based browsers in other applications (VAAPI-enabled variant)"
@@ -51,6 +51,7 @@ makedepends=(
   'compiler-rt'
   'git'
   'gn'
+  'go'
   'gperf'
   'java-runtime-headless'
   'lld'
@@ -78,9 +79,8 @@ source=("chromium-$_chromium_ver-lite.tar.xz::https://commondatastorage.googleap
   chromium-149-unbundle-minizip-undo-unicode.patch
   chromium-149-use-of-undeclared-identifier-ERROR.patch
   chromium-149-build-with-wasm-rollup.patch
-  chromium-150-fix-ar-unbundle.patch
-  chromium-150-fix-sysroot-path-error.patch
   chromium-150-revert-avx-flag-change.patch
+  chromium-151-dont-depends-on-histograms.xml-if-it-is-not-git-checkout.patch
   compiler-rt-adjust-paths.patch
   increase-fortify-level.patch
   glibc-2.42-baud-rate-fix.patch
@@ -89,19 +89,18 @@ source=("chromium-$_chromium_ver-lite.tar.xz::https://commondatastorage.googleap
   chromium-disable-font-tests.patch
   FindCEF.cmake
 )
-sha256sums=('63e1e8b3c40d1c9b51c55d27356f6d6b074e5c7f210e776290b1ef6d290a7df1'
-            'ec791113ae4a8d93ef9d7dd06b60e55990a5f7561575e890af5b53c793f7eab8'
+sha256sums=('421597c9b70b885f61079a08edd1b943d5c9965321c004c18e4d66fa747add52'
+            'cf17527e5e3ffbd8db9009620357af2cc05f30ae53309e6a4c8754053e8359cc'
             '11a96ffa21448ec4c63dd5c8d6795a1998d8e5cd5a689d91aea4d2bdd13fb06e'
             '4fc040a0656a0a524dd8ad090cd129fc5b6cb21adcc66be82080165789e8c13e'
             'c382830318c5b37826ecf44f3ba9def6be8affdad1bce819ecb83f3222ff4b3a'
             'b9e6339221efe03540ffb360c161d93604a1fc93a5a1c53e5e9849066f987d05'
-            '5ade4cdba7afebfcc09fa969f15bf27404579beac5b7bafb59a0214d407e4ad2'
+            'e25cf8fb60f5958127053c515b8decc2b45acceebf9a57654066d093df11f8e9'
             'c22338d13f12772cdbcb5cfc1ace94438b9f9c72353cdb165a3ff3ef3d677c78'
             '951514535be65f0e2f84e82305d96292be1da353c1427ba1048ea24be70003c4'
             'c4df27d25d298ac95d85e6f06b558b73bb67de5110a19a0228cb7f8519291ea5'
-            'f056d12571823d06c2a938158734fb4c7eeccb5c6f68228634d0c73d75feaa78'
-            '5c42260b11b87dd01c4ef11598033e9687bdf384af2e45adab2fd00964e977e8'
             '5f6ccb7b945c8a13c690493723bad816b36f2f25792d47e677b56f8200907e60'
+            '552ddcef0cf139927f54c9c728c68b0e385600107e5166449b29de75e5dfcd7f'
             'ec8e49b7114e2fa2d359155c9ef722ff1ba5fe2c518fa48e30863d71d3b82863'
             'd634d2ce1fc63da7ac41f432b1e84c59b7cceabf19d510848a7cff40c8025342'
             '1c1898f263eaacbc069a8e1a3e732852350350d1dad4cb1a6bba430e3b796cd0'
@@ -253,6 +252,8 @@ prepare() {
   # Increase _FORTIFY_SOURCE level to match Arch's default flags
   patch -Np1 -i ../increase-fortify-level.patch
 
+  echo ja
+
   # clang 22 lacks -fsanitize-ignore-for-ubsan-feature, which is needed to use
   # -fsanitize=array-bounds without triggering UBSan feature detection. Without
   # feature detection suppression, V8 compiles in __sanitizer_set_death_callback
@@ -260,6 +261,8 @@ prepare() {
   # build. Drop the entire sanitize_c_array_bounds cflags block.
   # Can be dropped when arch has LLVM 23.
   patch -Np1 -i ../chromium-149-drop-unknown-clang-flag.patch
+
+  echo nein
 
   # Causes a build failure with our clang version
   patch -Np1 -i ../chromium-147-revert-clang-no-lifetime-dse-flag.patch
@@ -281,17 +284,12 @@ prepare() {
 
   patch -Np1 -i ../chromium-149-use-of-undeclared-identifier-ERROR.patch
 
-  # Fix issue about missing AR file
-  # Credit: https://github.com/ungoogled-software/ungoogled-chromium/pull/3837
-  patch -Np1 -i ../chromium-150-fix-ar-unbundle.patch
-
-  # Fix issue about missing sysroot path
-  # Credit: https://github.com/ungoogled-software/ungoogled-chromium/pull/3837#issuecomment-4836756738
-  patch -Np1 -i ../chromium-150-fix-sysroot-path-error.patch
-
   # Fix issue about missing AVX functions
   # Credit: https://github.com/ungoogled-software/ungoogled-chromium/pull/3837
   patch -Np1 -i ../chromium-150-revert-avx-flag-change.patch
+
+  # Credit: https://github.com/ungoogled-software/ungoogled-chromium/pull/3883
+  patch -Np1 -i ../chromium-151-dont-depends-on-histograms.xml-if-it-is-not-git-checkout.patch
 
   # CEF: Remove sysroot requirement for non-x64 builds
   patch -Np1 -i ../cef-no-sysroot.patch
@@ -305,13 +303,13 @@ prepare() {
   # Link to system tools required by the build
   mkdir -p third_party/node/linux/node-linux-x64/bin \
     third_party/jdk/current/bin \
-    third_party/rust-toolchain/bin
+    third_party/rust-toolchain/bin \
+    third_party/dawn/tools/golang/linux-amd64/bin
 
   ln -s /usr/bin/node third_party/node/linux/node-linux-x64/bin/
   ln -s /usr/bin/java third_party/jdk/current/bin/
-
-  # the build uses system rust, but CEF checks for it here.
   ln -s /usr/bin/rustc third_party/rust-toolchain/bin/
+  ln -s /usr/bin/go third_party/dawn/tools/golang/linux-amd64/bin/
 
   # remove x86_64 binary and use our own
   rm -f third_party/gperf/cipd/bin/gperf
