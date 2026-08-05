@@ -16,7 +16,7 @@ _cef_commit=5d67476b12f718c8388918d1740aeec27f6b2b80
 # the chromium version must match CHROMIUM_BUILD_COMPATIBILITY.txt in the CEF repo
 _chromium_ver=151.0.7922.72
 _system_clang=1
-pkgrel=1
+pkgrel=2
 pkgdesc="Chromium Embedded Framework (CEF), simple framework for embedding Chromium-based browsers in other applications (VAAPI-enabled variant)"
 provides=("cef=$pkgver")  # provides="cef=$pkgver"
 conflicts=('cef')  # conflicts='cef'
@@ -113,7 +113,7 @@ sha256sums=('421597c9b70b885f61079a08edd1b943d5c9965321c004c18e4d66fa747add52'
 # Keys are the names in the above script; values are the dependencies in Arch
 declare -gA _system_libs=(
   [brotli]=brotli
-  #[dav1d]=dav1d
+  [dav1d]=dav1d
   #[ffmpeg]=ffmpeg    # YouTube playback stopped working in Chromium 120
   [flac]=flac
   [fontconfig]=fontconfig

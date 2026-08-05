@@ -1,7 +1,7 @@
 pkgbase = cef-vaapi
 	pkgdesc = Chromium Embedded Framework (CEF), simple framework for embedding Chromium-based browsers in other applications (VAAPI-enabled variant)
 	pkgver = 151.3.14
-	pkgrel = 1
+	pkgrel = 2
 	url = https://chromiumembedded.github.io/cef
 	arch = x86_64
 	license = BSD-3-Clause
@@ -44,6 +44,7 @@ pkgbase = cef-vaapi
 	depends = brotli
 	depends = libjpeg-turbo
 	depends = openh264
+	depends = dav1d
 	depends = flac
 	depends = libdrm
 	depends = libxml2
