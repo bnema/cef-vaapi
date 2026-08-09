@@ -9,14 +9,14 @@ pkgname=cef-vaapi
 # To update this package, update the _cef_commit and _chromium_ver variables.
 # For the CEF versioning scheme, see
 # https://chromiumembedded.github.io/cef/branches_and_building#version-number-format
-pkgver=151.3.14
+pkgver=151.3.16
 # See https://github.com/chromiumembedded/cef/tree/<release branch>
 # Also see https://chromiumembedded.github.io/cef/branches_and_building
-_cef_commit=5d67476b12f718c8388918d1740aeec27f6b2b80
+_cef_commit=be1e15d8892c064f0299ba18350236a9b272ce7f
 # the chromium version must match CHROMIUM_BUILD_COMPATIBILITY.txt in the CEF repo
-_chromium_ver=151.0.7922.72
+_chromium_ver=151.0.7922.109
 _system_clang=1
-pkgrel=2
+pkgrel=1
 pkgdesc="Chromium Embedded Framework (CEF), simple framework for embedding Chromium-based browsers in other applications (VAAPI-enabled variant)"
 provides=("cef=$pkgver")  # provides="cef=$pkgver"
 conflicts=('cef')  # conflicts='cef'
@@ -89,8 +89,8 @@ source=("chromium-$_chromium_ver-lite.tar.xz::https://commondatastorage.googleap
   chromium-disable-font-tests.patch
   FindCEF.cmake
 )
-sha256sums=('421597c9b70b885f61079a08edd1b943d5c9965321c004c18e4d66fa747add52'
-            'cf17527e5e3ffbd8db9009620357af2cc05f30ae53309e6a4c8754053e8359cc'
+sha256sums=('1db2843d977f9cbd2a16120e3cd9951bd3356f575a245d735ef00a2dbf88a6ba'
+            '1397aceb4490d6ca107e088118c12e3f5760eab269ded61fbba6e51b93a3b470'
             '11a96ffa21448ec4c63dd5c8d6795a1998d8e5cd5a689d91aea4d2bdd13fb06e'
             '4fc040a0656a0a524dd8ad090cd129fc5b6cb21adcc66be82080165789e8c13e'
             'c382830318c5b37826ecf44f3ba9def6be8affdad1bce819ecb83f3222ff4b3a'
@@ -252,8 +252,6 @@ prepare() {
   # Increase _FORTIFY_SOURCE level to match Arch's default flags
   patch -Np1 -i ../increase-fortify-level.patch
 
-  echo ja
-
   # clang 22 lacks -fsanitize-ignore-for-ubsan-feature, which is needed to use
   # -fsanitize=array-bounds without triggering UBSan feature detection. Without
   # feature detection suppression, V8 compiles in __sanitizer_set_death_callback
@@ -261,8 +259,6 @@ prepare() {
   # build. Drop the entire sanitize_c_array_bounds cflags block.
   # Can be dropped when arch has LLVM 23.
   patch -Np1 -i ../chromium-149-drop-unknown-clang-flag.patch
-
-  echo nein
 
   # Causes a build failure with our clang version
   patch -Np1 -i ../chromium-147-revert-clang-no-lifetime-dse-flag.patch
