@@ -9,12 +9,12 @@ pkgname=cef-vaapi
 # To update this package, update the _cef_commit and _chromium_ver variables.
 # For the CEF versioning scheme, see
 # https://chromiumembedded.github.io/cef/branches_and_building#version-number-format
-pkgver=151.3.16
+pkgver=151.3.17
 # See https://github.com/chromiumembedded/cef/tree/<release branch>
 # Also see https://chromiumembedded.github.io/cef/branches_and_building
-_cef_commit=be1e15d8892c064f0299ba18350236a9b272ce7f
+_cef_commit=f059e67fa6aad5e8cce8bebea5df706ffddfb174
 # the chromium version must match CHROMIUM_BUILD_COMPATIBILITY.txt in the CEF repo
-_chromium_ver=151.0.7922.109
+_chromium_ver=151.0.7922.138
 _system_clang=1
 pkgrel=1
 pkgdesc="Chromium Embedded Framework (CEF), simple framework for embedding Chromium-based browsers in other applications (VAAPI-enabled variant)"
@@ -89,8 +89,8 @@ source=("chromium-$_chromium_ver-lite.tar.xz::https://commondatastorage.googleap
   chromium-disable-font-tests.patch
   FindCEF.cmake
 )
-sha256sums=('1db2843d977f9cbd2a16120e3cd9951bd3356f575a245d735ef00a2dbf88a6ba'
-            '1397aceb4490d6ca107e088118c12e3f5760eab269ded61fbba6e51b93a3b470'
+sha256sums=('aa0887342e2417ee3e0dc28ebb81252d209c095f04f5993f52163e60449f329e'
+            '74db7dea37b59e09e505805b38bdff0caf99ca1789f3ae1620cf9ace6b482e16'
             '11a96ffa21448ec4c63dd5c8d6795a1998d8e5cd5a689d91aea4d2bdd13fb06e'
             '4fc040a0656a0a524dd8ad090cd129fc5b6cb21adcc66be82080165789e8c13e'
             'c382830318c5b37826ecf44f3ba9def6be8affdad1bce819ecb83f3222ff4b3a'
@@ -297,15 +297,20 @@ prepare() {
   echo 'clang_exe = "clang"' >>cef/tools/clang_util.py
 
   # Link to system tools required by the build
-  mkdir -p third_party/node/linux/node-linux-x64/bin \
+  mkdir -p \
+    third_party/node/linux/node-linux-x64/bin \
+    third_party/node/linux/node-linux-arm64/bin \
     third_party/jdk/current/bin \
     third_party/rust-toolchain/bin \
-    third_party/dawn/tools/golang/linux-amd64/bin
+    third_party/dawn/tools/golang/linux-amd64/bin \
+    third_party/dawn/tools/golang/linux-arm64/bin
 
   ln -s /usr/bin/node third_party/node/linux/node-linux-x64/bin/
+  ln -s /usr/bin/node third_party/node/linux/node-linux-arm64/bin/
   ln -s /usr/bin/java third_party/jdk/current/bin/
   ln -s /usr/bin/rustc third_party/rust-toolchain/bin/
   ln -s /usr/bin/go third_party/dawn/tools/golang/linux-amd64/bin/
+  ln -s /usr/bin/go third_party/dawn/tools/golang/linux-arm64/bin/
 
   # remove x86_64 binary and use our own
   rm -f third_party/gperf/cipd/bin/gperf
@@ -438,7 +443,12 @@ build() {
 
   export GN_DEFINES="${_flags[*]}"
   # Only build Release config
-  export GN_OUT_CONFIGS="Release_GN_x64"
+  if [[ $CARCH == "aarch64" ]]; then
+    export GN_DEFINES+=' target_cpu="arm64"'
+    export GN_OUT_CONFIGS="Release_GN_arm64"
+  else
+    export GN_OUT_CONFIGS="Release_GN_x64"
+  fi
 
   # Facilitate deterministic builds (taken from build/config/compiler/BUILD.gn)
   CFLAGS+='   -Wno-builtin-macro-redefined'
@@ -467,16 +477,33 @@ build() {
   # https://crbug.com/957519#c122
   CXXFLAGS=${CXXFLAGS/-Wp,-D_GLIBCXX_ASSERTIONS/}
 
+  # aarch64: strip -march= as chromium sub-targets need their own arch flags
+  if [[ $CARCH == "aarch64" ]]; then
+    CFLAGS="${CFLAGS/-march=*([^ ]) }"
+    CXXFLAGS="${CXXFLAGS/-march=*([^ ]) }"
+  fi
+
   python3 cef/tools/gclient_hook.py
   sed -i '/__sanitizer_set_death_callback/d' v8/src/sandbox/testing.cc
-  ninja -C out/Release_GN_x64 libcef chrome_sandbox
+
+  if [[ $CARCH == "aarch64" ]]; then
+    ninja -C out/Release_GN_arm64 libcef chrome_sandbox
+  else
+    ninja -C out/Release_GN_x64 libcef chrome_sandbox
+  fi
 
   # Build the CEF binary distribution
+  if [[ $CARCH == "aarch64" ]]; then
+    local _distrib_arch_flag="--arm64-build"
+  else
+    local _distrib_arch_flag="--x64-build"
+  fi
+
   python3 cef/tools/make_distrib.py \
     --distrib-subdir=distrib \
     --output-dir=.. \
     --ninja-build \
-    --x64-build \
+    $_distrib_arch_flag \
     --minimal \
     --no-docs \
     --no-archive
