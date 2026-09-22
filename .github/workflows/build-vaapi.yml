@@ -112,9 +112,13 @@ jobs:
           printf 'Installing missing build dependencies:\n'
           printf '  %s\n' "${missing_packages[@]}"
 
+          # Refresh package database first: without -Sy, pacman may request
+          # package files that no longer exist on the mirrors (404).
           if [ "$(id -u)" -eq 0 ]; then
+            pacman -Sy --noconfirm
             pacman -S --needed --noconfirm "${missing_packages[@]}"
           else
+            sudo -n pacman -Sy --noconfirm
             sudo -n pacman -S --needed --noconfirm "${missing_packages[@]}"
           fi
 
@@ -296,9 +300,12 @@ jobs:
           printf 'Installing missing publish dependencies:\n'
           printf '  %s\n' "${missing_packages[@]}"
 
+          # Same stale-database guard as the build dependencies step above.
           if [ "$(id -u)" -eq 0 ]; then
+            pacman -Sy --noconfirm
             pacman -S --needed --noconfirm "${missing_packages[@]}"
           else
+            sudo -n pacman -Sy --noconfirm
             sudo -n pacman -S --needed --noconfirm "${missing_packages[@]}"
           fi
 
