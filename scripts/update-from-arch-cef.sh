@@ -270,7 +270,13 @@ text = text.replace("\nprepare() {", guardrails + "\nprepare() {", 1)
 export_marker = '  export GN_DEFINES="${_flags[*]}"\n'
 if export_marker not in text:
     fail("GN_DEFINES export not found")
-text = text.replace(export_marker, '  _validate_cef_vaapi_invariants\n\n' + export_marker, 1)
+sccache_opt_in = '''  # Optional compiler cache, used by the self-hosted CI runner.
+  if [[ -n ${CEF_VAAPI_SCCACHE:-} ]] && command -v sccache >/dev/null; then
+    _flags+=('cc_wrapper="sccache"')
+  fi
+
+'''
+text = text.replace(export_marker, sccache_opt_in + '  _validate_cef_vaapi_invariants\n\n' + export_marker, 1)
 
 dst.write_text(text)
 PYEOF

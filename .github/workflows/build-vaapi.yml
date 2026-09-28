@@ -98,6 +98,7 @@ jobs:
             printf '%s\n' "${depends[@]}" "${makedepends[@]}" |
               sed -E 's/[<>=].*$//' |
               sort -u
+            echo sccache
           )
 
           printf 'Checking build dependencies:\n'
@@ -125,6 +126,13 @@ jobs:
           export XDG_CACHE_HOME=/cache
           export SRCDEST=/cache/sources
           mkdir -p "$SRCDEST"
+
+          export CEF_VAAPI_SCCACHE=1
+          export SCCACHE_DIR=/cache/sccache
+          export SCCACHE_CACHE_SIZE=100G
+          mkdir -p "$SCCACHE_DIR"
+          sccache --stop-server >/dev/null 2>&1 || true
+          sccache --zero-stats
 
           source PKGBUILD
           shopt -s nullglob
@@ -172,6 +180,8 @@ jobs:
             echo "Retrying once against the preserved build tree"
             makepkg_args=(-s --noconfirm --force --noextract --noprepare)
           done
+
+          sccache --show-stats || true
 
           test -f "${{ steps.pkg.outputs.pkgfile }}"
           ls -lh "${{ steps.pkg.outputs.pkgfile }}"
