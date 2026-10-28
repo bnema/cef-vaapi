@@ -31,6 +31,12 @@ jobs:
     # CEF can spend many hours in the final Chromium/CEF link/distribution steps.
     # Keep this below GitHub's 24h token lifetime so release publishing still works.
     timeout-minutes: 1380
+    # Direct, non-sudo makepkg inherits these exported job variables, including
+    # in build(). Keep server startup and compilation on the same cache config.
+    env:
+      SCCACHE_DIR: /cache/sccache
+      SCCACHE_CACHE_SIZE: 100G
+      CEF_VAAPI_SCCACHE: '1'
     concurrency:
       group: cef-vaapi-build-${{ github.ref }}
       cancel-in-progress: true
@@ -113,6 +119,13 @@ jobs:
           echo "::error::Missing packages on runner: ${missing_packages[*]}. Rebuild the runner image."
           exit 1
 
+      - name: Start compiler cache
+        if: steps.release_check.outputs.exists == 'false'
+        run: |
+          mkdir -p "$SCCACHE_DIR"
+          sccache --start-server
+          sccache --zero-stats
+
       - name: Build cef-vaapi package
         if: steps.release_check.outputs.exists == 'false'
         id: build
@@ -123,15 +136,6 @@ jobs:
           export XDG_CACHE_HOME=/cache
           export SRCDEST=/cache/sources
           mkdir -p "$SRCDEST"
-
-          export SCCACHE_DIR=/cache/sccache
-          export SCCACHE_CACHE_SIZE=100G
-          sccache --stop-server >/dev/null 2>&1 || true
-          if mkdir -p "$SCCACHE_DIR" && sccache --zero-stats; then
-            export CEF_VAAPI_SCCACHE=1
-          else
-            echo "::warning::sccache unavailable; building without compiler cache"
-          fi
 
           source PKGBUILD
           shopt -s nullglob
@@ -175,13 +179,13 @@ jobs:
             # Preparation completed successfully before entering this loop.
           done
 
-          if [[ -n ${CEF_VAAPI_SCCACHE:-} ]]; then
-            sccache --show-stats || true
-          fi
-
           test -f "${{ steps.pkg.outputs.pkgfile }}"
           ls -lh "${{ steps.pkg.outputs.pkgfile }}"
           echo "package_path=$(realpath "${{ steps.pkg.outputs.pkgfile }}")" >> "$GITHUB_OUTPUT"
+
+      - name: Show compiler cache statistics
+        if: always() && steps.release_check.outputs.exists == 'false'
+        run: sccache --show-stats
 
       - name: Verify built binary contains VAAPI symbols
         if: steps.release_check.outputs.exists == 'false'
