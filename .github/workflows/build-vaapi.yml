@@ -110,23 +110,16 @@ jobs:
             exit 0
           fi
 
-          printf 'Installing missing build dependencies:\n'
-          printf '  %s\n' "${missing_packages[@]}"
-
-          # Refresh package database first: without -Sy, pacman may request
-          # package files that no longer exist on the mirrors (404).
-          if [ "$(id -u)" -eq 0 ]; then
-            pacman -Sy --noconfirm
-            pacman -S --needed --noconfirm "${missing_packages[@]}"
-          else
-            sudo -n pacman -Sy --noconfirm
-            sudo -n pacman -S --needed --noconfirm "${missing_packages[@]}"
-          fi
+          echo "::error::Missing packages on runner: ${missing_packages[*]}. Rebuild the runner image."
+          exit 1
 
       - name: Build cef-vaapi package
         if: steps.release_check.outputs.exists == 'false'
         id: build
         run: |
+          # clean: false leaves packages from previous runs in the checkout root
+          find . -maxdepth 1 -name '*.pkg.tar.zst' -delete
+
           export XDG_CACHE_HOME=/cache
           export SRCDEST=/cache/sources
           mkdir -p "$SRCDEST"
@@ -306,17 +299,8 @@ jobs:
             exit 0
           fi
 
-          printf 'Installing missing publish dependencies:\n'
-          printf '  %s\n' "${missing_packages[@]}"
-
-          # Same stale-database guard as the build dependencies step above.
-          if [ "$(id -u)" -eq 0 ]; then
-            pacman -Sy --noconfirm
-            pacman -S --needed --noconfirm "${missing_packages[@]}"
-          else
-            sudo -n pacman -Sy --noconfirm
-            sudo -n pacman -S --needed --noconfirm "${missing_packages[@]}"
-          fi
+          echo "::error::Missing packages on runner: ${missing_packages[*]}. Rebuild the runner image."
+          exit 1
 
       - name: Publish cef-vaapi-bin to AUR
         env:
@@ -354,3 +338,7 @@ jobs:
             git commit -m "Update cef-vaapi-bin to ${{ steps.pkg.outputs.pkgver }}-${{ steps.pkg.outputs.pkgrel }}"
             git push origin master
           fi
+
+      - name: Remove AUR SSH key
+        if: always()
+        run: rm -f "$HOME/.ssh/aur"
