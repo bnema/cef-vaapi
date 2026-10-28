@@ -144,29 +144,24 @@ jobs:
           shopt -s nullglob
           patches=(./*.patch)
           shopt -u nullglob
-          build_key=$(sha256sum PKGBUILD .SRCINFO FindCEF.cmake "${patches[@]}" | sha256sum | cut -d' ' -f1)
+          build_key=$(sha256sum PKGBUILD .SRCINFO FindCEF.cmake .github/workflows/build-vaapi.yml "${patches[@]}" | sha256sum | cut -d' ' -f1)
           key_file="src/.cef-vaapi-build-key"
           out_dir="src/chromium-${_chromium_ver}/out/Release_GN_x64"
+          # CEF invokes gn through PATH. Use Chromium's pinned binary rather
+          # than an older system gn that cannot parse current build files.
+          export PATH="$PWD/src/chromium-${_chromium_ver}/buildtools/linux64:$PATH"
           makepkg_args=(-s --noconfirm --force)
 
-          if [[ -d "$out_dir" ]]; then
-            if [[ ! -f "$key_file" ]]; then
-              echo "Found existing Chromium build tree without cache key; resuming it once."
-              printf '%s\n' "$build_key" > "$key_file"
-              makepkg_args+=(--noextract --noprepare)
-            elif [[ "$(cat "$key_file")" == "$build_key" ]]; then
-              echo "Found matching Chromium build tree; resuming with --noextract --noprepare."
-              makepkg_args+=(--noextract --noprepare)
-            else
-              echo "Found existing Chromium build tree with a different packaging key; preserving it and resuming."
-              echo "If patches or source preparation changed incompatibly, remove src/ on the runner and rerun."
-              printf '%s\n' "$build_key" > "$key_file"
-              makepkg_args+=(--noextract --noprepare)
-            fi
+          if [[ -d "$out_dir" && -f "$key_file" && "$(cat "$key_file")" == "$build_key" ]]; then
+            echo "Matching prepared tree; resuming without extraction/preparation."
+            makepkg_args+=(--noextract --noprepare)
           else
+            echo "Missing or changed preparation key; rebuilding tree (preserving /cache)."
             rm -rf src pkg
-            mkdir -p src
+            # Record the key only after extraction and prepare both succeed.
+            makepkg -s --noconfirm --force --nobuild
             printf '%s\n' "$build_key" > "$key_file"
+            makepkg_args+=(--noextract --noprepare)
           fi
 
           max_attempts=2
@@ -184,7 +179,7 @@ jobs:
             find "$out_dir/gen" -name '*.mojom-module' -delete 2>/dev/null || true
             rm -rf "$out_dir/gen/mojo/public/tools/bindings"
             echo "Retrying once against the preserved build tree"
-            makepkg_args=(-s --noconfirm --force --noextract --noprepare)
+            # Preparation completed successfully before entering this loop.
           done
 
           if [[ -n ${CEF_VAAPI_SCCACHE:-} ]]; then
