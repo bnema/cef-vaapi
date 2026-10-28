@@ -17,7 +17,7 @@ class PolicyTests(unittest.TestCase):
     def test_stable_tag(self):
         self.assertEqual(stable.metadata({"pkgver": "154.0.34", "pkgrel": 2}),
                          "pkgver=154.0.34\npkgrel=2\nref=154.0.34-2")
-        self.assertIn("ref=1:154.0.34-2", stable.metadata(
+        self.assertIn("ref=1-154.0.34-2", stable.metadata(
             {"pkgver": "154.0.34", "pkgrel": 2, "epoch": 1}))
         with self.assertRaises(ValueError):
             stable.metadata({"pkgver": "bad\nref=main", "pkgrel": 1})

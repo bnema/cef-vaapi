@@ -11,8 +11,9 @@ def metadata(package):
     epoch = package.get("epoch", 0)
     tag = f"{version}-{release}"
     if epoch:
-        tag = f"{epoch}:{tag}"
-    if not re.fullmatch(r"[0-9][0-9A-Za-z.+:_-]*", tag):
+        # Arch packaging Git tags replace the epoch colon with a dash.
+        tag = f"{epoch}-{tag}"
+    if not re.fullmatch(r"[0-9][0-9A-Za-z.+_-]*", tag):
         raise ValueError("Invalid Arch packaging tag")
     return f"pkgver={version}\npkgrel={release}\nref={tag}"
 
