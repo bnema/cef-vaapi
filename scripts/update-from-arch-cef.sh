@@ -4,6 +4,7 @@ set -euo pipefail
 ARCH_CEF_REPO="https://gitlab.archlinux.org/archlinux/packaging/packages/cef.git"
 CACHE_DIR="${CEF_ARCH_CACHE:-/tmp/cef-vaapi-arch-cef}"
 OUTPUT_DIR="$(pwd)"
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 
 usage() {
   cat <<EOF
@@ -44,14 +45,20 @@ require_cmd makepkg
 mkdir -p "$OUTPUT_DIR"
 OUTPUT_DIR="$(cd "$OUTPUT_DIR" && pwd)"
 
-log "Fetching upstream Arch CEF packaging into $CACHE_DIR"
-if [[ -d "$CACHE_DIR/.git" ]]; then
-  git -C "$CACHE_DIR" fetch --depth 1 origin main
-  git -C "$CACHE_DIR" reset --hard FETCH_HEAD >/dev/null
-else
-  rm -rf "$CACHE_DIR"
-  git clone --depth 1 "$ARCH_CEF_REPO" "$CACHE_DIR"
+# Pin to the same stable packaging tag selected by the workflow. Standalone
+# invocations resolve extra stable too, never packaging main / extra-testing.
+if [[ -z ${CEF_ARCH_REF:-} ]]; then
+  CEF_ARCH_REF=$(python3 "$SCRIPT_DIR/arch-cef-stable.py" | sed -n 's/^ref=//p')
 fi
+[[ "$CEF_ARCH_REF" =~ ^[0-9][0-9A-Za-z.+:_-]*$ ]] || die "Invalid stable packaging tag"
+log "Fetching upstream Arch CEF packaging tag $CEF_ARCH_REF into $CACHE_DIR"
+if [[ ! -d "$CACHE_DIR/.git" ]]; then
+  mkdir -p "$CACHE_DIR"
+  git -C "$CACHE_DIR" init
+  git -C "$CACHE_DIR" remote add origin "$ARCH_CEF_REPO"
+fi
+git -C "$CACHE_DIR" fetch --depth 1 origin "refs/tags/$CEF_ARCH_REF"
+git -C "$CACHE_DIR" reset --hard FETCH_HEAD >/dev/null
 
 [[ -f "$CACHE_DIR/PKGBUILD" ]] || die "Upstream PKGBUILD not found in $CACHE_DIR"
 

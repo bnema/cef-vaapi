@@ -41,18 +41,7 @@ jobs:
       - name: Check latest Arch cef package version
         id: upstream
         run: |
-          upstream_srcinfo=$(curl -fsSL "https://gitlab.archlinux.org/archlinux/packaging/packages/cef/-/raw/main/.SRCINFO")
-          upstream_pkgver=$(printf '%s\n' "$upstream_srcinfo" | awk -F' = ' '/^[[:space:]]*pkgver = / { print $2; exit }')
-          upstream_pkgrel=$(printf '%s\n' "$upstream_srcinfo" | awk -F' = ' '/^[[:space:]]*pkgrel = / { print $2; exit }')
-
-          test -n "$upstream_pkgver"
-          test -n "$upstream_pkgrel"
-
-          {
-            echo "pkgver=${upstream_pkgver}"
-            echo "pkgrel=${upstream_pkgrel}"
-          } >> "$GITHUB_OUTPUT"
-          echo "Upstream: cef ${upstream_pkgver}-${upstream_pkgrel}"
+          python3 scripts/arch-cef-stable.py >> "$GITHUB_OUTPUT"
 
       - name: Check if update is needed
         id: check
@@ -72,6 +61,7 @@ jobs:
         if: steps.check.outputs.up_to_date == 'false'
         run: |
           docker run --rm \
+            -e CEF_ARCH_REF="${{ steps.upstream.outputs.ref }}" \
             -e HOST_UID="$(id -u)" \
             -e HOST_GID="$(id -g)" \
             -v "$PWD:/work" \
