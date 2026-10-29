@@ -37,6 +37,8 @@ jobs:
       SCCACHE_DIR: /cache/sccache
       SCCACHE_CACHE_SIZE: 100G
       CEF_VAAPI_SCCACHE: '1'
+      # Runner has 8 CPUs / 16 GiB; GN would size the action pool from host CPUs.
+      CEF_VAAPI_ACTION_POOL_DEPTH: '4'
     concurrency:
       group: cef-vaapi-build-${{ github.ref }}
       cancel-in-progress: true

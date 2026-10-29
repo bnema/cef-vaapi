@@ -44,6 +44,24 @@ class PolicyTests(unittest.TestCase):
                 else:
                     self.assertNotIn('cc_wrapper=', result.stdout)
 
+    def test_updater_keeps_build_options(self):
+        # The daily sync regenerates PKGBUILD from this template.
+        pkgbuild = (ROOT / "PKGBUILD").read_text()
+        updater = (ROOT / "scripts/update-from-arch-cef.sh").read_text()
+        start = '  # Optional C/C++ compiler cache.'
+        block = pkgbuild[pkgbuild.index(start):pkgbuild.index('  _validate_cef_vaapi_invariants\n')]
+        self.assertIn(block, updater)
+
+    def test_action_pool_depth(self):
+        pkgbuild = (ROOT / "PKGBUILD").read_text()
+        block = pkgbuild[pkgbuild.index('  # Optional cap on concurrent'):
+                         pkgbuild.index('  _validate_cef_vaapi_invariants\n')]
+        for depth, expected in (("", []), ("4", ["action_pool_depth=4"])):
+            script = '_flags=()\nCEF_VAAPI_ACTION_POOL_DEPTH=' + depth + '\n' + block
+            script += 'printf "%s\\n" "${_flags[@]}"\n'
+            out = subprocess.run(["bash", "-c", script], capture_output=True, text=True).stdout
+            self.assertEqual([l for l in out.splitlines() if l], expected)
+
     def test_prepare_policy(self):
         workflow = (ROOT / ".github/workflows/build-vaapi.yml").read_text()
         block = textwrap.dedent(workflow[workflow.index('          if [[ -d "$out_dir"'):workflow.index('          max_attempts=2')])
