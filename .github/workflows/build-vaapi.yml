@@ -279,12 +279,12 @@ jobs:
             'mesa'
             'nss'
             'pango'
-            'vulkan-icd-loader'
           )
           optdepends=(
             'libva-mesa-driver: VAAPI driver for AMD GPUs'
             'intel-media-driver: VAAPI driver for modern Intel GPUs'
             'libva-utils: VAAPI diagnostics such as vainfo'
+            'vulkan-icd-loader: Vulkan rendering and hardware WebGPU'
           )
           source=("cef-vaapi-\${pkgver}-\${pkgrel}-x86_64.pkg.tar.zst::https://github.com/bnema/cef-vaapi/releases/download/cef-vaapi-v\${pkgver}-\${pkgrel}/cef-vaapi-\${pkgver}-\${pkgrel}-x86_64.pkg.tar.zst")
           sha256sums=('${sha256}')
