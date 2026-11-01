@@ -46,8 +46,10 @@ jobs:
       - name: Check if update is needed
         id: check
         run: |
-          current="${{ steps.current.outputs.pkgver }}-${{ steps.current.outputs.pkgrel }}"
-          upstream="${{ steps.upstream.outputs.pkgver }}-${{ steps.upstream.outputs.pkgrel }}"
+          # Compare pkgver only: cef-vaapi owns its pkgrel for local packaging
+          # fixes, so a different Arch pkgrel is not an upstream update.
+          current="${{ steps.current.outputs.pkgver }}"
+          upstream="${{ steps.upstream.outputs.pkgver }}"
 
           if [ "$current" = "$upstream" ]; then
             echo "up_to_date=true" >> "$GITHUB_OUTPUT"
