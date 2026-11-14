@@ -67,7 +67,7 @@ jobs:
 
       - name: Check local patches exist
         run: |
-          for f in $(grep -oP '^\s+\K[\w.-]+\.patch' PKGBUILD); do
+          for f in $(grep -oP '^\s+\K[\w.-]+\.(patch|diff)' PKGBUILD); do
             test -f "$f" && echo "OK: $f exists" || { echo "FAIL: $f missing"; exit 1; }
           done
           test -f FindCEF.cmake && echo "OK: FindCEF.cmake exists" || { echo "FAIL: FindCEF.cmake missing"; exit 1; }

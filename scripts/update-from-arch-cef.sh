@@ -63,7 +63,7 @@ git -C "$CACHE_DIR" reset --hard FETCH_HEAD >/dev/null
 [[ -f "$CACHE_DIR/PKGBUILD" ]] || die "Upstream PKGBUILD not found in $CACHE_DIR"
 
 log "Copying local assets"
-find "$CACHE_DIR" -maxdepth 1 -type f -name '*.patch' -exec cp -f -t "$OUTPUT_DIR" {} +
+find "$CACHE_DIR" -maxdepth 1 -type f \( -name '*.patch' -o -name '*.diff' \) -exec cp -f -t "$OUTPUT_DIR" {} +
 cp -f "$CACHE_DIR/FindCEF.cmake" "$OUTPUT_DIR/"
 cp -f "$CACHE_DIR/REUSE.toml" "$OUTPUT_DIR/"
 # Preserve Arch's ISC packaging license alongside repo MIT

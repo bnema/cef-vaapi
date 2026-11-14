@@ -8,6 +8,7 @@ on:
       - PKGBUILD
       - .SRCINFO
       - '*.patch'
+      - '*.diff'
       - FindCEF.cmake
       - README.md
       - LICENSE
@@ -112,7 +113,7 @@ jobs:
             -exec rm -rf {} +
 
           shopt -s nullglob
-          patch_files=(./*.patch)
+          patch_files=(./*.patch ./*.diff)
           cp PKGBUILD .SRCINFO /tmp/cef-vaapi-source-aur/
           cp "${patch_files[@]}" FindCEF.cmake README.md LICENSE LICENSE.ARCH-ISC REUSE.toml /tmp/cef-vaapi-source-aur/
           cp -a LICENSES /tmp/cef-vaapi-source-aur/

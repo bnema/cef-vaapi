@@ -143,7 +143,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add PKGBUILD .SRCINFO REUSE.toml
-          git add -- '*.patch'
+          git add -- '*.patch' '*.diff'
           git commit -m "sync: cef-vaapi ${CURRENT_VERSION} → ${NEW_VERSION}"
           git push origin HEAD:main
           echo "did_commit=true" >> "$GITHUB_OUTPUT"

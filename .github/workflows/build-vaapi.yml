@@ -15,6 +15,7 @@ on:
       - PKGBUILD
       - .SRCINFO
       - '*.patch'
+      - '*.diff'
       - FindCEF.cmake
       - .github/workflows/build-vaapi.yml
       - scripts/write-aur-known-hosts.sh
@@ -141,7 +142,7 @@ jobs:
 
           source PKGBUILD
           shopt -s nullglob
-          patches=(./*.patch)
+          patches=(./*.patch ./*.diff)
           shopt -u nullglob
           build_key=$(sha256sum PKGBUILD .SRCINFO FindCEF.cmake .github/workflows/build-vaapi.yml "${patches[@]}" | sha256sum | cut -d' ' -f1)
           key_file="src/.cef-vaapi-build-key"
