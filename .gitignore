@@ -25,3 +25,6 @@ infra/
 # Local/private runner image and generated binary AUR package
 .github/actions-runner/
 aur/cef-vaapi-bin/
+
+# Python bytecode
+__pycache__/

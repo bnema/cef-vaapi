@@ -97,6 +97,37 @@ makepkg() {
                     if result.returncode == 0:
                         self.assertIn("--noprepare", (root / "args").read_text())
 
+    def test_release_state(self):
+        # A network error must fail, never read as "missing" (which rebuilds
+        # and replaces a good release). Each API call is faked separately.
+        ok_404 = "echo 'gh: Not Found (HTTP 404)' >&2; exit 1"
+        timeout = "echo 'dial tcp: i/o timeout' >&2; exit 1"
+        cases = (
+            # (releases/tags answer, releases list answer, exit code, state, calls)
+            ("echo 1", timeout, 0, "published", 1),
+            (ok_404, "echo 42", 0, "draft", 2),
+            (ok_404, "true", 0, "missing", 2),
+            (timeout, "true", 1, "", 3),
+            (ok_404, timeout, 1, "", 6),
+        )
+        for tags, listing, code, state, calls in cases:
+            with self.subTest(tags=tags, listing=listing), tempfile.TemporaryDirectory() as tmp:
+                gh = Path(tmp) / "gh"
+                gh.write_text(
+                    "#!/bin/sh\necho call >> \"$(dirname \"$0\")/calls\"\n"
+                    "case \"$*\" in\n"
+                    f"  *releases/tags/*) {tags} ;;\n"
+                    f"  *releases\\?*) {listing} ;;\n"
+                    "  *) exit 9 ;;\nesac\n")
+                gh.chmod(0o755)
+                env = {"PATH": f"{tmp}:/usr/bin:/bin", "RELEASE_STATE_DELAY": "0"}
+                result = subprocess.run(
+                    ["bash", str(ROOT / "scripts/github-release-state.sh"), "owner/repo", "tag"],
+                    env=env, capture_output=True, text=True)
+                self.assertEqual(result.returncode, code, result.stderr)
+                self.assertEqual(result.stdout.strip(), state)
+                self.assertEqual((Path(tmp) / "calls").read_text().count("call"), calls)
+
 
 if __name__ == "__main__":
     unittest.main()

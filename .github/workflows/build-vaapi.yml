@@ -70,14 +70,20 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          if gh release view "${{ steps.pkg.outputs.tag }}" --json id >/dev/null 2>&1; then
+          set -euo pipefail
+          state=$(bash scripts/github-release-state.sh "${{ github.repository }}" "${{ steps.pkg.outputs.tag }}")
+          if [ "$state" = "draft" ]; then
+            # A draft is left behind by an interrupted upload; the release step replaces it.
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "Found unfinished draft release for ${{ steps.pkg.outputs.tag }}; rebuilding"
+          elif [ "$state" = "published" ]; then
             if [ "${{ inputs.force_rebuild }}" = "true" ]; then
               echo "exists=false" >> "$GITHUB_OUTPUT"
               echo "Release exists, but force_rebuild=true"
             else
               tmpdir=$(mktemp -d)
               trap 'rm -rf "$tmpdir"' EXIT
-              gh release download "${{ steps.pkg.outputs.tag }}" --pattern SHA256SUMS --dir "$tmpdir" --clobber
+              gh release download "${{ steps.pkg.outputs.tag }}" --repo "${{ github.repository }}" --pattern SHA256SUMS --dir "$tmpdir" --clobber
               mapfile -t sha256_matches < <(awk -v pkg="${{ steps.pkg.outputs.pkgfile }}" '$2 == pkg { print $1 }' "$tmpdir/SHA256SUMS")
               if [ "${#sha256_matches[@]}" -ne 1 ]; then
                 echo "Expected exactly one SHA256SUMS entry for ${{ steps.pkg.outputs.pkgfile }}, found ${#sha256_matches[@]}" >&2
@@ -221,14 +227,29 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          if gh release view "${{ steps.pkg.outputs.tag }}" >/dev/null 2>&1; then
-            gh release delete "${{ steps.pkg.outputs.tag }}" --yes --cleanup-tag
-          fi
+          set -euo pipefail
 
-          gh release create "${{ steps.pkg.outputs.tag }}" \
-            --repo bnema/cef-vaapi \
-            --title "cef-vaapi ${{ steps.pkg.outputs.pkgver }}-${{ steps.pkg.outputs.pkgrel }}" \
-            --notes "CEF ${{ steps.pkg.outputs.pkgver }}-${{ steps.pkg.outputs.pkgrel }} with VAAPI and proprietary codecs enabled.
+          # ISP peering to GitHub drops connections at times: retry the whole
+          # replace-and-upload sequence instead of failing after a long build.
+          # set -e is off inside `if publish_release`, so every call returns on failure.
+          repo="${{ github.repository }}"
+          tag="${{ steps.pkg.outputs.tag }}"
+          publish_release() {
+            local state
+            state=$(bash scripts/github-release-state.sh "$repo" "$tag") || return 1
+            case "$state" in
+              # A draft has no git tag yet, so only a published release has one to clean up.
+              draft) gh release delete "$tag" --repo "$repo" --yes || return 1 ;;
+              published) gh release delete "$tag" --repo "$repo" --yes --cleanup-tag || return 1 ;;
+              missing) ;;
+              *) echo "Unexpected release state: $state" >&2; return 1 ;;
+            esac
+
+            # Bound each attempt: a stalled upload must not block until the job timeout.
+            timeout -k 1m 30m gh release create "$tag" \
+              --repo "$repo" \
+              --title "cef-vaapi ${{ steps.pkg.outputs.pkgver }}-${{ steps.pkg.outputs.pkgrel }}" \
+              --notes "CEF ${{ steps.pkg.outputs.pkgver }}-${{ steps.pkg.outputs.pkgrel }} with VAAPI and proprietary codecs enabled.
 
             SHA256: \`${{ steps.checksum.outputs.sha256 }}\`
 
@@ -239,11 +260,26 @@ jobs:
             sudo pacman -U ${{ steps.pkg.outputs.pkgfile }}
             \`\`\`
             " \
-            "${{ steps.build.outputs.package_path }}" \
-            SHA256SUMS \
-            VAAPI-CHECK.txt \
-            "cef-vaapi-${{ steps.pkg.outputs.pkgver }}-${{ steps.pkg.outputs.pkgrel }}-PKGBUILD" \
-            "cef-vaapi-${{ steps.pkg.outputs.pkgver }}-${{ steps.pkg.outputs.pkgrel }}-SRCINFO"
+              "${{ steps.build.outputs.package_path }}" \
+              SHA256SUMS \
+              VAAPI-CHECK.txt \
+              "cef-vaapi-${{ steps.pkg.outputs.pkgver }}-${{ steps.pkg.outputs.pkgrel }}-PKGBUILD" \
+              "cef-vaapi-${{ steps.pkg.outputs.pkgver }}-${{ steps.pkg.outputs.pkgrel }}-SRCINFO" || return 1
+          }
+
+          max_attempts=5
+          for attempt in $(seq 1 "$max_attempts"); do
+            if publish_release; then
+              exit 0
+            fi
+            if [ "$attempt" -eq "$max_attempts" ]; then
+              echo "::error::GitHub Release failed after ${max_attempts} attempts"
+              exit 1
+            fi
+            delay=$((attempt * 60))
+            echo "::warning::GitHub Release attempt ${attempt} failed; retrying in ${delay}s"
+            sleep "$delay"
+          done
 
       - name: Generate cef-vaapi-bin PKGBUILD
         run: |
