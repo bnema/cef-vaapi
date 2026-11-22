@@ -52,6 +52,28 @@ class PolicyTests(unittest.TestCase):
         block = pkgbuild[pkgbuild.index(start):pkgbuild.index('  _validate_cef_vaapi_invariants\n')]
         self.assertIn(block, updater)
 
+    def test_local_patches_applied(self):
+        # The daily sync rebuilds PKGBUILD from Arch's; cef-vaapi's own patches
+        # must survive it, be listed with a current checksum and be applied.
+        import hashlib
+        import re
+        pkgbuild = (ROOT / "PKGBUILD").read_text()
+        updater = (ROOT / "scripts/update-from-arch-cef.sh").read_text()
+        body = re.search(r'(?ms)^source=\(\n(.*?)^\)', pkgbuild).group(1)
+        sources = [line.strip() for line in body.splitlines()
+                   if line.strip() and not line.strip().startswith("#")]
+        sums = re.findall(r"'([0-9a-f]{64}|SKIP)'",
+                          re.search(r'(?ms)^sha256sums=\((.*?)\)', pkgbuild).group(1))
+        self.assertEqual(len(sources), len(sums))
+        names = re.findall(r'^    "([^"]+\.(?:patch|diff))": \(', updater, re.M)
+        self.assertTrue(names, "no local patches found in the updater")
+        for name in names:
+            with self.subTest(patch=name):
+                self.assertIn(name, sources)
+                digest = hashlib.sha256((ROOT / name).read_bytes()).hexdigest()
+                self.assertEqual(sums[sources.index(name)], digest)
+                self.assertIn(f"  patch -Np1 -i ../{name}\n", pkgbuild)
+
     def test_action_pool_depth(self):
         pkgbuild = (ROOT / "PKGBUILD").read_text()
         block = pkgbuild[pkgbuild.index('  # Optional cap on concurrent'):
