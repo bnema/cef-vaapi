@@ -211,12 +211,76 @@ def sum_entries(haystack):
 
 if len(source_entries(text)) != len(sum_entries(text)):
     fail("upstream source and sha256sums arrays differ in length")
+
+# Bundle Chromium's own copies of third-party libraries. A prebuilt package
+# (cef-vaapi-bin) linked against Arch's copies breaks whenever one of them
+# bumps its soname (libsimdutf.so.36 -> .37) until it is rebuilt. Keep only
+# libraries whose sonames have been stable for years.
+kept_system_libs = {"fontconfig": "fontconfig", "libdrm": "libdrm"}
+system_libs_re = re.compile(r'(?ms)^declare -gA _system_libs=\(\n(?P<body>.*?)^\)')
+match = system_libs_re.search(text)
+if not match:
+    fail("_system_libs array not found")
+for key, package in kept_system_libs.items():
+    if not re.search(rf'(?m)^[ \t]*\[{re.escape(key)}\]={re.escape(package)}[ \t]*$', match.group("body")):
+        fail(f"_system_libs no longer lists [{key}]={package}")
+system_libs_body = "  # cef-vaapi bundles every other library, see update-from-arch-cef.sh\n"
+system_libs_body += "".join(f"  [{key}]={package}\n" for key, package in kept_system_libs.items())
+text = text[:match.start("body")] + system_libs_body + text[match.end("body"):]
+
+# Arch patches that only adapt Chromium or CEF to the system copies of
+# now-bundled libraries. Arch may drop them; an applied one would break the
+# bundled build (e.g. without libxml_visibility CEF cannot use bundled libxml).
+unbundle_patches = [
+    "chromium-147-simdutf-8.0-base-char.patch",
+    "chromium-152-unbundle-minizip-undo-unicode.patch",
+    "chromium-152-unbundle-opus-devtools.patch",
+    "chromium-153-iamf-tools-unbundled-opus.patch",
+    "cef-no-libxml-visibility-patch.patch",
+]
+
+
+def source_name(entry):
+    return entry.strip("'\"").split("::")[0]
+
+
+for name in unbundle_patches:
+    entries = [source_name(entry) for entry in source_entries(text)]
+    if name not in entries:
+        continue
+    index = entries.index(name)
+    match = source_re.search(text)
+    lines = match.group("body").splitlines(keepends=True)
+    kept = [line for line in lines if source_name(line.strip()) != name]
+    text = text[:match.start("body")] + "".join(kept) + text[match.end("body"):]
+    match = sums_re.search(text)
+    body = match.group("body")
+    sums = list(re.finditer(r"'([0-9a-f]{64}|SKIP)'", body))
+    if index > 0:
+        start, end = sums[index - 1].end(), sums[index].end()
+    else:
+        start, end = sums[0].start(), sums[1].start()
+    body = body[:start] + body[end:]
+    text = text[:match.start("body")] + body + text[match.end("body"):]
+    text, count = re.subn(rf'(?m)(?:^  #[^\n]*\n)*^  patch -Np1 -i \.\./{re.escape(name)}\n\n?', '', text)
+    if count != 1:
+        fail(f"expected exactly one application of {name}, found {count}")
+if len(source_entries(text)) != len(sum_entries(text)):
+    fail("source and sha256sums arrays differ in length after dropping unbundle patches")
+# Arch renames these patches per Chromium version; stop on any new one so it is
+# reviewed and added above instead of being applied to the bundled build.
+for entry in source_entries(text):
+    if re.search(r"unbundle|simdutf|libxml-visibility", source_name(entry)):
+        fail(f"unreviewed unbundle patch {source_name(entry)}: add it to unbundle_patches")
+# Opus is bundled now; Arch only needs it to build against the system copy.
+text = re.sub(r"(?ms)(^makedepends=\(\n.*?)^  'opus'\n", r"\1", text, count=1)
+
 sysroot_patch = "  patch -Np1 -i ../cef-no-sysroot.patch\n"
 for name, comment in local_patches.items():
     patch_path = out_dir / name
     if not patch_path.is_file():
         fail(f"local patch missing: {name}")
-    upstream_names = [entry.strip("'\"").split("::")[0] for entry in source_entries(text)]
+    upstream_names = [source_name(entry) for entry in source_entries(text)]
     if name in upstream_names or (cache_dir / name).exists():
         fail(f"upstream unexpectedly already ships {name}")
     match = source_re.search(text)

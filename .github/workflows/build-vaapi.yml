@@ -19,6 +19,7 @@ on:
       - FindCEF.cmake
       - .github/workflows/build-vaapi.yml
       - scripts/write-aur-known-hosts.sh
+      - scripts/bin-depends.sh
 
 permissions:
   contents: write
@@ -102,6 +103,14 @@ jobs:
             echo "exists=false" >> "$GITHUB_OUTPUT"
             echo "No existing release for ${{ steps.pkg.outputs.tag }}"
           fi
+
+      # Build and check sonames against today's Arch, never against the runner
+      # image's snapshot. The image grants sudo for exactly these commands; -Sc
+      # keeps the package cache in the container layer bounded.
+      - name: Update build container packages
+        run: |
+          sudo -n /usr/bin/pacman -Syu --noconfirm
+          sudo -n /usr/bin/pacman -Sc --noconfirm
 
       - name: Prepare build dependencies
         if: steps.release_check.outputs.exists == 'false'
@@ -282,12 +291,29 @@ jobs:
           done
 
       - name: Generate cef-vaapi-bin PKGBUILD
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          set -euo pipefail
           sha256="${{ steps.checksum.outputs.sha256 }}"
           if [ -z "$sha256" ]; then
             sha256="${{ steps.release_check.outputs.sha256 }}"
           fi
           test -n "$sha256"
+
+          # Depends come from the package itself, with each linked soname pinned
+          # so pacman refuses a library upgrade that would break libcef.so.
+          pkgfile="${{ steps.pkg.outputs.pkgfile }}"
+          # Without a build in this run, never trust a leftover local file.
+          if [ -z "${{ steps.checksum.outputs.sha256 }}" ]; then
+            rm -f "$pkgfile"
+            gh release download "${{ steps.pkg.outputs.tag }}" --repo "${{ github.repository }}" --pattern "$pkgfile" --clobber
+          fi
+          echo "${sha256}  ${pkgfile}" | sha256sum -c -
+          # libvulkan.so.1 is bundled but loads the system ICDs at runtime.
+          bin_depends=$(bash scripts/bin-depends.sh "$pkgfile")
+          test -n "$bin_depends"
+          depends_lines=$(printf '%s\nvulkan-icd-loader\n' "$bin_depends" | sort -u | sed "s/.*/  '&'/")
 
           mkdir -p pkgbuild/cef-vaapi-bin
           cat > pkgbuild/cef-vaapi-bin/PKGBUILD <<EOF
@@ -302,23 +328,7 @@ jobs:
           provides=("cef=\$pkgver")
           conflicts=('cef')
           depends=(
-            'alsa-lib'
-            'at-spi2-core'
-            'dav1d'
-            'dbus'
-            'libdrm'
-            'libffi'
-            'libpulse'
-            'libva'
-            'libxcomposite'
-            'libxdamage'
-            'libxkbcommon'
-            'libxrandr'
-            'mesa'
-            'nss'
-            'openh264'
-            'pango'
-            'vulkan-icd-loader'
+          ${depends_lines}
           )
           optdepends=(
             'libva-mesa-driver: VAAPI driver for AMD GPUs'
