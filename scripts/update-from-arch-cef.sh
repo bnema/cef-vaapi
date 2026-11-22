@@ -75,13 +75,17 @@ fi
 [[ -f "$OUTPUT_DIR/FindCEF.cmake" ]] || die "Missing copied asset: FindCEF.cmake"
 
 log "Transforming PKGBUILD"
-python3 - "$CACHE_DIR/PKGBUILD" "$OUTPUT_DIR/PKGBUILD" <<'PYEOF'
+python3 - "$CACHE_DIR/PKGBUILD" "$OUTPUT_DIR/PKGBUILD" "$CACHE_DIR/local-patches" <<'PYEOF'
 from pathlib import Path
+import hashlib
 import re
 import sys
 
 src = Path(sys.argv[1])
 dst = Path(sys.argv[2])
+out_dir = dst.parent
+local_patch_list = Path(sys.argv[3])
+cache_dir = src.parent
 text = src.read_text()
 
 
@@ -177,6 +181,55 @@ for flag in required_flags:
 if re.search(r'(?m)^[ \t]*\[ffmpeg\]=', text):
     fail("_system_libs[ffmpeg] is enabled; it must remain commented or absent")
 text = replace_once(text, "  rm third_party/depot_tools/ninja", "  rm -f third_party/depot_tools/ninja", "depot_tools ninja removal")
+
+# cef-vaapi's own Chromium patches. Arch's PKGBUILD does not know about them,
+# so each sync must add them back or they silently drop out of the build.
+local_patches = {
+    "chromium-154-fallback-linux-ui-portal-color-scheme.patch": (
+        "  # use_gtk/use_qt are disabled, so FallbackLinuxUi receives the portal color\n"
+        "  # scheme; make it reach web content (prefers-color-scheme), crbug.com/536445418\n"
+    ),
+}
+source_re = re.compile(r'(?ms)^source=\(\n(?P<body>.*?)^\)')
+sums_re = re.compile(r'(?ms)^sha256sums=\((?P<body>.*?)\)')
+
+
+def source_entries(haystack):
+    match = source_re.search(haystack)
+    if not match:
+        fail("source array not found")
+    return [line.strip() for line in match.group("body").splitlines()
+            if line.strip() and not line.strip().startswith("#")]
+
+
+def sum_entries(haystack):
+    match = sums_re.search(haystack)
+    if not match:
+        fail("sha256sums array not found")
+    return re.findall(r"'([0-9a-f]{64}|SKIP)'", match.group("body"))
+
+
+if len(source_entries(text)) != len(sum_entries(text)):
+    fail("upstream source and sha256sums arrays differ in length")
+sysroot_patch = "  patch -Np1 -i ../cef-no-sysroot.patch\n"
+for name, comment in local_patches.items():
+    patch_path = out_dir / name
+    if not patch_path.is_file():
+        fail(f"local patch missing: {name}")
+    upstream_names = [entry.strip("'\"").split("::")[0] for entry in source_entries(text)]
+    if name in upstream_names or (cache_dir / name).exists():
+        fail(f"upstream unexpectedly already ships {name}")
+    match = source_re.search(text)
+    text = text[:match.end("body")] + f"  {name}\n" + text[match.end("body"):]
+    digest = hashlib.sha256(patch_path.read_bytes()).hexdigest()
+    match = sums_re.search(text)
+    text = text[:match.end("body")] + f"\n            '{digest}'" + text[match.end("body"):]
+    text = replace_once(text, sysroot_patch,
+                        sysroot_patch + "\n" + comment + f"  patch -Np1 -i ../{name}\n",
+                        "cef-no-sysroot patch application")
+if len(source_entries(text)) != len(sum_entries(text)):
+    fail("source and sha256sums arrays differ in length after adding local patches")
+local_patch_list.write_text("".join(f"{name}\n" for name in local_patches))
 
 if "replaces=" in text:
     fail("replaces must not be set")
@@ -330,6 +383,12 @@ grep -q 'cef::git+https://github.com/chromiumembedded/cef.git' "$PKG" || die "so
 ! grep -q 'cef-vaapi::git+https://github.com/chromiumembedded/cef.git' "$PKG" || die "bad source alias found"
 ! grep -Eq '^[[:space:]]*\[ffmpeg\]=' "$PKG" || die "_system_libs[ffmpeg] is enabled"
 grep -q '_validate_cef_vaapi_invariants' "$PKG" || die "guardrails missing"
+mapfile -t local_patches < "$CACHE_DIR/local-patches"
+(( ${#local_patches[@]} > 0 )) || die "no local patches recorded"
+for local_patch in "${local_patches[@]}"; do
+  grep -qF "patch -Np1 -i ../$local_patch" "$PKG" || die "$local_patch is not applied in prepare()"
+  grep -qxF "	source = $local_patch" "$SRC" || die "$local_patch missing from .SRCINFO sources"
+done
 grep -q 'pkgbase = cef-vaapi' "$SRC" || die ".SRCINFO pkgbase check failed"
 
 log "Update complete: $OUTPUT_DIR"

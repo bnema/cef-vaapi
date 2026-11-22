@@ -24,6 +24,9 @@ jobs:
           done
           echo "Bash syntax OK"
 
+      - name: Run packaging policy tests
+        run: python3 scripts/test-ci-policy.py
+
       - name: Validate required media flags and VAAPI invariants
         run: |
           grep -q 'ffmpeg_branding="Chrome"' PKGBUILD && echo "OK: ffmpeg_branding=Chrome" || { echo "FAIL: ffmpeg_branding missing"; exit 1; }
