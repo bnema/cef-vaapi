@@ -104,14 +104,6 @@ jobs:
             echo "No existing release for ${{ steps.pkg.outputs.tag }}"
           fi
 
-      # Build and check sonames against today's Arch, never against the runner
-      # image's snapshot. The image grants sudo for exactly these commands; -Sc
-      # keeps the package cache in the container layer bounded.
-      - name: Update build container packages
-        run: |
-          sudo -n /usr/bin/pacman -Syu --noconfirm
-          sudo -n /usr/bin/pacman -Sc --noconfirm
-
       - name: Prepare build dependencies
         if: steps.release_check.outputs.exists == 'false'
         run: |
