@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """Offline regression checks for stable selection and prepared-tree reuse."""
+import hashlib
 import importlib.util
 from pathlib import Path
+import re
 import subprocess
 import tempfile
 import textwrap
@@ -52,11 +54,24 @@ class PolicyTests(unittest.TestCase):
         block = pkgbuild[pkgbuild.index(start):pkgbuild.index('  _validate_cef_vaapi_invariants\n')]
         self.assertIn(block, updater)
 
+    def test_third_party_libraries_are_bundled(self):
+        # cef-vaapi-bin must survive Arch soname bumps: only libraries with
+        # long-stable sonames may come from the system.
+        pkgbuild = (ROOT / "PKGBUILD").read_text()
+        body = re.search(r'(?ms)^declare -gA _system_libs=\(\n(.*?)^\)', pkgbuild).group(1)
+        enabled = re.findall(r'(?m)^[ \t]*\[([^\]]+)\]=', body)
+        self.assertEqual(sorted(enabled), ["fontconfig", "libdrm"])
+        updater = (ROOT / "scripts/update-from-arch-cef.sh").read_text()
+        block = re.search(r'(?ms)^unbundle_patches = \[\n(.*?)^\]', updater).group(1)
+        dropped = re.findall(r'"([^"]+)"', block)
+        self.assertTrue(dropped, "no unbundle patches found in the updater")
+        for name in dropped:
+            with self.subTest(patch=name):
+                self.assertNotIn(f"../{name}", pkgbuild)
+
     def test_local_patches_applied(self):
         # The daily sync rebuilds PKGBUILD from Arch's; cef-vaapi's own patches
         # must survive it, be listed with a current checksum and be applied.
-        import hashlib
-        import re
         pkgbuild = (ROOT / "PKGBUILD").read_text()
         updater = (ROOT / "scripts/update-from-arch-cef.sh").read_text()
         body = re.search(r'(?ms)^source=\(\n(.*?)^\)', pkgbuild).group(1)
